@@ -1,4 +1,4 @@
-<h1>Intro</h1>
+<h1>Introduction</h1>
 
 <pre>
 c++ -O2 main.cpp -lglut -lGL
@@ -16,3 +16,7 @@ Run
 </pre>
 
 <p align="center"><img src="img/cover.png"/></p>
+
+<h1>References</h1>
+
+<a href="https://en.wikipedia.org/wiki/Granular_convection">wikipedia:Granular_convection</a>
