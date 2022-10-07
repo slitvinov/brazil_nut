@@ -14,3 +14,5 @@ Run
 ./a.out 1 8 3
 ./a.out 1 8 3 saveimages
 </pre>
+
+<p align="center"><img src="img/cover.png"/></p>
