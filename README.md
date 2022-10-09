@@ -20,3 +20,12 @@ Run
 <h1>References</h1>
 
 <a href="https://en.wikipedia.org/wiki/Granular_convection">wikipedia:Granular_convection</a>
+
+<h1>Method</h1>
+
+a collision step between two particles</br>
+</br>
+INPUT: dt, radius, relative position r, v1, v2, omega1, omega2 are the
+velocities and angular velocities of the two colliding particles</br>
+</br>
+OUTPUT: force1, force2, torque1, torque2

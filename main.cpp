@@ -1,40 +1,37 @@
 #include <GL/glut.h>
 #include <assert.h>
-#include <cstring>
-#include <iostream>
 #include <map>
 #include <math.h>
-#include <set>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
-#include <vector>
+#include <string.h>
 
-using namespace std;
 #pragma pack(1)
 struct TGAHEADER {
-  GLbyte identsize;    // Size of ID field that follows header (0)
-  GLbyte colorMapType; // 0 = None, 1 = paletted
-  GLbyte imageType;    // 0 = none, 1 = indexed, 2 = rgb, 3 = grey, +8=rle
-  unsigned short colorMapStart;  // First colour map entry
-  unsigned short colorMapLength; // Number of colors
-  unsigned char colorMapBits;    // bits per palette entry
-  unsigned short xstart;         // image x origin
-  unsigned short ystart;         // image y origin
-  unsigned short width;          // width in pixels
-  unsigned short height;         // height in pixels
-  GLbyte bits;                   // bits per pixel (8 16, 24, 32)
-  GLbyte descriptor;             // image descriptor
+  GLbyte identsize;
+  GLbyte colorMapType;
+  GLbyte imageType;
+  unsigned short colorMapStart;
+  unsigned short colorMapLength;
+  unsigned char colorMapBits;
+  unsigned short xstart;
+  unsigned short ystart;
+  unsigned short width;
+  unsigned short height;
+  GLbyte bits;
+  GLbyte descriptor;
 };
 #pragma pack(8)
+enum { sX = 75, sY = 75, n = 600, term = 2 * n - 1 };
 static int domain_size = 2;
 static double rmin = domain_size / 40.0;
 static double cutoff = 2.5 * rmin / pow(2, 1. / 6.);
 static double cutoff2 = cutoff * cutoff;
-static vector<string> runtime_inputs;
+static char **argv;
 static int bStoreImages;
 static double dt = 1e-4;
-enum { n = 600 };
+static const int words = ceil(n * (n - 1) / 2 / 32.);
+static unsigned int table[words];
 static double x[n];
 static double y[n];
 static double vx[n];
@@ -44,13 +41,14 @@ static double ay[n];
 static double om[n];
 static double to[n];
 static double color[n][3];
-enum { sX = 75, sY = 75 };
+static const double radius = 0.02;
+static const double threshold_collision_p2p = 4 * 0.02 * 0.02;
 
-static void paintSphere(double x, double y, double r, double g, double b,
-                        double radius) {
+static void paintSphere(double x, double y, GLfloat r, GLfloat g, GLfloat b,
+                        GLdouble radius) {
   glPushAttrib(GL_ENABLE_BIT);
   glEnable(GL_LIGHTING);
-  GLfloat lightColor[] = {r * 1.2, g * 1.2, b * 1.2, 1};
+  GLfloat lightColor[] = {r * 1.2f, g * 1.2f, b * 1.2f, 1};
   glLightfv(GL_LIGHT0, GL_DIFFUSE, lightColor);
   glColor3f(r, g, b);
   glPushMatrix();
@@ -60,293 +58,163 @@ static void paintSphere(double x, double y, double r, double g, double b,
   glPopAttrib();
 };
 
-struct {
-  vector<int> data[sX * sY];
-  vector<int> &operator()(int ix, int iy) {
-    assert(ix >= 0 && ix < sX);
-    assert(iy >= 0 && iy < sY);
-    return data[sX * iy + ix];
-  }
-  void insert(int ix, int iy, int particle_id) {
-    assert(ix >= 0 && ix < sX);
-    assert(iy >= 0 && iy < sY);
-    data[sX * iy + ix].push_back(particle_id);
-  }
-  void clear() {
-    for (int i = 0; i < sX * sY; i++)
-      data[i].clear();
-  }
+static struct {
+  int *data[sX * sY];
+  int n[sX * sY];
+  int cap[sX * sY];
 } cells;
 
-struct Nut {
+static struct {
   double r;
   double x, y;
   double u, v;
   double ax, ay;
   double omega, domegadt;
-
-  Nut()
-      : r(0.20), x(0.0), y(-0.7), u(0), v(0), ax(0), ay(0), omega(0),
-        domegadt(0) {}
-
-  void update() {
-    ay += -1.0;
-    u += dt * ax;
-    v += dt * ay;
-
-    x += dt * u;
-    y += dt * v;
-
-    omega += dt * domegadt;
-
-    ax = 0;
-    ay = 0;
-    domegadt = 0;
-  }
-
-  void draw() { paintSphere(x, y, 1.3 * 179. / 256, 1.3 * 89. / 256, 0, r); }
 } nut;
 
-struct Box {
+static void nut_update(void) {
+  nut.ay += -1.0;
+  nut.u += dt * nut.ax;
+  nut.v += dt * nut.ay;
+
+  nut.x += dt * nut.u;
+  nut.y += dt * nut.v;
+
+  nut.omega += dt * nut.domegadt;
+
+  nut.ax = 0;
+  nut.ay = 0;
+  nut.domegadt = 0;
+}
+
+static struct Box {
   struct {
     double a, a_desired, r1, r2;
   } tinfo;
   double half_width;
   double aspect_ratio;
   double a2;
-
   double planes[4][3];
   double center[2];
   double angle;
   double t;
   double angular_speed;
-  void update() {
-    t += dt;
-
-    static bool bGo = false;
-    if (!bGo && t < 4) {
-      tinfo.a = 0;
-      angular_speed = 0;
-      angle = 0;
-    } else if (bGo == false && t >= 4) {
-      bGo = true;
-      t = 0;
-    } else if (bGo) {
-      tinfo.a = tinfo.a_desired;
-      double maxangle = 2. / 180. * M_PI;
-      angular_speed = a2 * maxangle * cos(a2 * t);
-      angle = maxangle * sin(a2 * t);
-    }
-
-    center[0] = tinfo.r1 * cos(tinfo.a * t + M_PI / 2);
-    center[1] = tinfo.r2 * sin(tinfo.a * t + M_PI / 2);
-
-    double D[4] = {aspect_ratio, 1, aspect_ratio, 1};
-    for (int i = 0; i < 4; i++) {
-      planes[i][0] = cos(i * M_PI / 2 + M_PI + angle);
-      planes[i][1] = sin(i * M_PI / 2 + M_PI + angle);
-      planes[i][2] = -(half_width * D[i] + center[0] * planes[i][0] +
-                       center[1] * planes[i][1]);
-    }
-  }
-
-  double distance_to_plane(double x, double y, int p) {
-    assert(p >= 0 && p < 4);
-    return planes[p][0] * x + planes[p][1] * y + planes[p][2];
-  }
-
-  void velocity(double x, double y, double &vx, double &vy) {
-    vx = -angular_speed * y - tinfo.r1 * tinfo.a * sin(tinfo.a * t);
-    vy = +angular_speed * x + tinfo.r2 * tinfo.a * sin(tinfo.a * t);
-  }
-
-  double normal(int component, int plane) {
-    assert(component >= 0 && component < 2);
-    assert(plane >= 0 && plane < 4);
-
-    return planes[plane][component];
-  }
-
-  void view() {
-    glLineWidth(2.);
-    glColor3f(1, 1, 1);
-    glBegin(GL_LINE_LOOP);
-    double p[4][2] = {-1.01, -1.01, +1.01, -1.01, +1.01, +1.01, -1.01, +1.01};
-    double R[2][2] = {cos(angle), -sin(angle), sin(angle), cos(angle)};
-    for (int i = 0; i < 4; i++) {
-      double q[2] = {R[0][0] * p[i][0] * half_width * aspect_ratio +
-                         R[0][1] * p[i][1] * half_width,
-                     R[1][0] * p[i][0] * half_width * aspect_ratio +
-                         R[1][1] * p[i][1] * half_width};
-
-      glVertex2f(q[0] + center[0], q[1] + center[1]);
-    }
-    glEnd();
-  }
 } box;
 
-void box_ini(double r1_over_r2, double a1, double a2) {
-  box.angular_speed = 0;
-  box.half_width = 1.0;
-  box.aspect_ratio = 0.4;
-  box.a2 = a2;
-  box.angle = 0;
-  box.t = 0;
-  box.tinfo.a = a1;
-  box.tinfo.a_desired = a1;
-  box.tinfo.r1 = 0.05;
-  box.tinfo.r2 = box.tinfo.r1 / r1_over_r2;
-  box.update();
+static double box_distance_to_plane(double x, double y, int p) {
+  return box.planes[p][0] * x + box.planes[p][1] * y + box.planes[p][2];
+}
+
+static void box_update(void) {
+  box.t += dt;
+
+  static bool bGo = false;
+  if (!bGo && box.t < 4) {
+    box.tinfo.a = 0;
+    box.angular_speed = 0;
+    box.angle = 0;
+  } else if (bGo == false && box.t >= 4) {
+    bGo = true;
+    box.t = 0;
+  } else if (bGo) {
+    box.tinfo.a = box.tinfo.a_desired;
+    double maxangle = 2. / 180. * M_PI;
+    box.angular_speed = box.a2 * maxangle * cos(box.a2 * box.t);
+    box.angle = maxangle * sin(box.a2 * box.t);
+  }
+
+  box.center[0] = box.tinfo.r1 * cos(box.tinfo.a * box.t + M_PI / 2);
+  box.center[1] = box.tinfo.r2 * sin(box.tinfo.a * box.t + M_PI / 2);
+
+  double D[4] = {box.aspect_ratio, 1, box.aspect_ratio, 1};
+  for (int i = 0; i < 4; i++) {
+    box.planes[i][0] = cos(i * M_PI / 2 + M_PI + box.angle);
+    box.planes[i][1] = sin(i * M_PI / 2 + M_PI + box.angle);
+    box.planes[i][2] =
+        -(box.half_width * D[i] + box.center[0] * box.planes[i][0] +
+          box.center[1] * box.planes[i][1]);
+  }
 }
 
 struct Collision {
   double ux;
   double uy;
-  Collision() { ux = uy = 0; }
-  // CORE OF GRANULAR (CHUTE) FLOW
-  // this method solves a collision step between two particles
-  // INPUT: dt, radius (constant for all the particles), relative position r,
-  // v1, v2, respectively omega1, omega2 are the velocities respectively angular
-  // velocities of the two colliding particles, OUTPUT: force1, force2: forces
-  // felt by the 2 particles torque1, torque2: torques felt by the 2 particles
-  void compute(double dt, double radius1, double radius2, double r[2],
-               double v1[2], double v2[2], double omega1, double omega2,
-               double force1[2], double force2[2], double &torque1,
-               double &torque2) {
-    double kn = 1e5;
-    double kt = 2. / 70 * kn;
-    double gn = 5e1;
-    double gt = 0;
-
-    double IrI = sqrt(pow(r[0], 2) + pow(r[1], 2));
-    double invIrI = 1. / sqrt(pow(r[0], 2) + pow(r[1], 2));
-    double delta = max(0., radius1 + radius2 - IrI);
-
-    double v[2] = {v1[0] - v2[0], v1[1] - v2[1]};
-    double n[2] = {invIrI * r[0], invIrI * r[1]};
-
-    double vDOTn = v[0] * n[0] + v[1] * n[1];
-    double vn[2] = {vDOTn * n[0], vDOTn * n[1]};
-
-    double average_omega = 0.5 * (omega1 + omega2);
-
-    double vt[2] = {v[0] - vn[0] + average_omega * r[1],
-                    v[1] - vn[1] - average_omega * r[0]};
-
-    ux += dt * v[0];
-    uy += dt * v[1];
-
-    double force_factor = sqrt(delta / (radius1 + radius2));
-
-    double Fn[2] = {
-        kn * delta * n[0] - gn * 0.5 * vn[0],
-        kn * delta * n[1] - gn * 0.5 * vn[1],
-    };
-
-    double Ft[2] = {
-        -kt * ux - gt * 0.5 * vt[0],
-        -kt * uy - gt * 0.5 * vt[1],
-    };
-
-    double f[2] = {force_factor * (Fn[0] + Ft[0]),
-                   force_factor * (Fn[1] + Ft[1])};
-
-    force1[0] += f[0];
-    force1[1] += f[1];
-
-    force2[0] -= f[0];
-    force2[1] -= f[1];
-
-    torque1 -= -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
-    torque2 += -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
-  }
 };
 
-// table to check whether collisions were existing or not
-struct BitTable {
-  int n;              // number of particles
-  int term;           // 2*n-1
-  int words;          // number of integers
-  unsigned int *data; // integers
+static void collision_compute(double ux, double uy, double dt, double radius1,
+                              double radius2, double r[2], double v1[2],
+                              double v2[2], double omega1, double omega2,
+                              double force1[2], double force2[2],
+                              double &torque1, double &torque2) {
+  double kn = 1e5;
+  double kt = 2. / 70 * kn;
+  double gn = 5e1;
+  double gt = 0;
+  double IrI = sqrt(pow(r[0], 2) + pow(r[1], 2));
+  double invIrI = 1. / sqrt(pow(r[0], 2) + pow(r[1], 2));
+  double delta = std::max(0., radius1 + radius2 - IrI);
+  double v[2] = {v1[0] - v2[0], v1[1] - v2[1]};
+  double n[2] = {invIrI * r[0], invIrI * r[1]};
+  double vDOTn = v[0] * n[0] + v[1] * n[1];
+  double vn[2] = {vDOTn * n[0], vDOTn * n[1]};
+  double average_omega = 0.5 * (omega1 + omega2);
+  double vt[2] = {v[0] - vn[0] + average_omega * r[1],
+                  v[1] - vn[1] - average_omega * r[0]};
 
-  // compute the id of the collision of particle x with particle y
-  int _bit_id(int x, int y) {
-    int m = min(x, y);
-#ifndef NDEBUG
-    {
-      int result = ((m * (term - m)) >> 1) + (x + y - 2 * m - 1);
-      assert(result >= 0);
-      assert(result < n * (n - 1) / 2);
-    }
-#endif
-
-    return ((m * (term - m)) >> 1) + (x + y - 2 * m - 1);
-  }
-
-  // allocate the integers
-  BitTable(int n)
-      : n(n), words(ceil(n * (n - 1) / 2 / 32.)), data(NULL), term(2 * n - 1) {
-    assert(n >= 0);
-
-    data = new unsigned int[words];
-    memset(data, 0, sizeof(unsigned int) * words);
-  }
-
-  ~BitTable() { delete[] data; }
-
-  // find out if a collision (particle x, particle y) already exists (in that
-  // case it returns 1)
-  int operator()(int x, int y) {
-    assert(x >= 0 && x < n);
-    assert(y >= 0 && y < n);
-
-    int bit_id = _bit_id(x, y);
-
-    return (data[bit_id >> 5] >> (bit_id & 0x1f)) & 0x1;
-  }
-
-  // set the bit of the collision (particle x, particle y)
-  void set(int x, int y) {
-    int bit_id = _bit_id(x, y);
-
-    data[bit_id >> 5] |= (1 << (bit_id & 0x1f));
-  }
-
-  // unset the bit of the collision (particle x, particle y)
-  void clear(int x, int y) {
-    int bit_id = _bit_id(x, y);
-    data[bit_id >> 5] &= ~(1 << (bit_id & 0x1f));
-  }
+  ux += dt * v[0];
+  uy += dt * v[1];
+  double force_factor = sqrt(delta / (radius1 + radius2));
+  double Fn[2] = {
+      kn * delta * n[0] - gn * 0.5 * vn[0],
+      kn * delta * n[1] - gn * 0.5 * vn[1],
+  };
+  double Ft[2] = {
+      -kt * ux - gt * 0.5 * vt[0],
+      -kt * uy - gt * 0.5 * vt[1],
+  };
+  double f[2] = {force_factor * (Fn[0] + Ft[0]),
+                 force_factor * (Fn[1] + Ft[1])};
+  force1[0] += f[0];
+  force1[1] += f[1];
+  force2[0] -= f[0];
+  force2[1] -= f[1];
+  torque1 -= -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
+  torque2 += -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
 };
 
-// this processing elements compute the force felt by particles due to
-// particle-particle and particle-boundary collisions
+static int table_id(int x, int y) {
+  int m = std::min(x, y);
+  return ((m * (term - m)) >> 1) + (x + y - 2 * m - 1);
+}
+
+static int table_get(int x, int y) {
+  int bit_id = table_id(x, y);
+  return (table[bit_id >> 5] >> (bit_id & 0x1f)) & 0x1;
+}
+
+static void table_clear(int x, int y) {
+  int bit_id = table_id(x, y);
+  table[bit_id >> 5] &= ~(1 << (bit_id & 0x1f));
+}
+
+static void table_set(int x, int y) {
+  int bit_id = table_id(x, y);
+  table[bit_id >> 5] |= (1 << (bit_id & 0x1f));
+}
+
 struct GranularFlowCollisionProcessing {
-  // global data
-  double radius, dt;
-  double threshold_collision_p2p;
+  std::map<int, Collision> collisions;
+  std::map<int, Collision> boundary_collisions;
+  std::map<int, Collision> nut_c2p;
+  std::map<int, Collision> nut_c2b;
 
-  double t;
-
-  // containers for collisions
-  map<int, Collision> collisions; // particle-particle collision container
-  map<int, Collision>
-      boundary_collisions; // particle-boundary collision container
-  map<int, Collision> nut_c2p;
-  map<int, Collision> nut_c2b;
-
-  BitTable bit_table;
-
-  // called in _add_new_collisions
-  void _buildCellList() {}
-
-  // called in _add_new_collisions
   bool _add_collision(int a, int b) {
     if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
-      if (!bit_table(a, b)) {
-        int minab = min(a, b);
-        collisions[minab + n * (a + b - minab)] = Collision();
-        bit_table.set(a, b);
+      if (!table_get(a, b)) {
+        int minab = std::min(a, b);
+        collisions[minab + n * (a + b - minab)].ux = 0;
+        collisions[minab + n * (a + b - minab)].uy = 0;
+        table_set(a, b);
 
         return true;
       }
@@ -355,94 +223,118 @@ struct GranularFlowCollisionProcessing {
   }
 
   void _remove_old_collisions() {
-    {
-      vector<int> to_remove;
+    int *rem;
+    int nrem;
+    int crem;
+    int i;
+    int a;
+    int b = 0;
 
-      for (map<int, Collision>::iterator it = collisions.begin();
-           it != collisions.end(); ++it) {
-        int a = it->first % n;
-        int b = it->first / n;
-
-        if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) >
-            threshold_collision_p2p) {
-          to_remove.push_back(it->first);
-          bit_table.clear(a, b);
+    nrem = 0;
+    crem = 0;
+    rem = NULL;
+    for (std::map<int, Collision>::iterator it = collisions.begin();
+         it != collisions.end(); ++it) {
+      a = it->first % n;
+      b = it->first / n;
+      if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) > threshold_collision_p2p) {
+        if (nrem >= crem) {
+          crem = 2 * crem + 1;
+          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+            fprintf(stderr, "realloc failed\n");
+            exit(1);
+          }
         }
+        rem[nrem++] = it->first;
+        table_clear(a, b);
       }
-
-      for (vector<int>::iterator it = to_remove.begin(); it != to_remove.end();
-           it++)
-        collisions.erase(*it);
     }
-
-    {
-      vector<int> to_remove;
-
-      for (map<int, Collision>::iterator it = nut_c2p.begin();
-           it != nut_c2p.end(); ++it) {
-        int a = it->first;
-
-        if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) >
-            pow(radius + nut.r, 2))
-          to_remove.push_back(it->first);
+    for (i = 0; i < nrem; i++)
+      collisions.erase(rem[i]);
+    nrem = 0;
+    for (std::map<int, Collision>::iterator it = nut_c2p.begin();
+         it != nut_c2p.end(); ++it) {
+      a = it->first;
+      if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) >
+          pow(radius + nut.r, 2)) {
+        if (nrem >= crem) {
+          crem = 2 * crem + 1;
+          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+            fprintf(stderr, "realloc failed\n");
+            exit(1);
+          }
+        }
+        rem[nrem++] = it->first;
+        table_clear(a, b);
       }
-
-      for (vector<int>::iterator it = to_remove.begin(); it != to_remove.end();
-           it++)
-        nut_c2p.erase(*it);
     }
+    for (i = 0; i < nrem; i++)
+      nut_c2p.erase(rem[i]);
+    free(rem);
   }
 
   void _add_new_collisions() {
-    int counter = 0;
-    int all = 0;
+    int all;
+    int *cellA;
+    int *cellB;
+    int code;
+    int counter;
+    int i;
+    int isx;
+    int isy;
+    int itA;
+    int itB;
+    int ix;
+    int iy;
+    int j;
+    int m;
+    int sizeA;
+    int sizeB;
 
-    for (int iy = 0; iy < sX; iy++)
-      for (int ix = 0; ix < sY; ix++) {
-        vector<int> &cellA = cells(ix, iy);
-        vector<int>::const_iterator itA;
-        vector<int>::const_iterator itAS = cellA.begin();
-        vector<int>::const_iterator itAE = cellA.end();
-        int sizeA = cellA.size();
-
+    all = 0;
+    counter = 0;
+    for (iy = 0; iy < sX; iy++)
+      for (ix = 0; ix < sY; ix++) {
+        cellA = cells.data[sX * iy + ix];
+        sizeA = cells.n[sX * iy + ix];
         if (sizeA == 0)
           continue;
 
-        for (int code = 0; code < 9; code++) {
-          int isx = (ix + (code % 3) - 1);
-          int isy = (iy + (code / 3) - 1);
+        for (code = 0; code < 9; code++) {
+          isx = (ix + (code % 3) - 1);
+          isy = (iy + (code / 3) - 1);
 
           if (isx < 0 || isx >= sX || isy < 0 || isy >= sY)
             continue;
 
-          vector<int> &cellB = cells(isx, isy);
-
-          if (cellB.size() == 0)
+          cellB = cells.data[sX * isy + isx];
+          sizeB = cells.n[sX * isy + isx];
+          if (sizeB == 0)
             continue;
 
           if (code != 1 + 3)
-            for (itA = itAS; itA != itAE; ++itA)
-              for (vector<int>::const_iterator itB = cellB.begin();
-                   itB != cellB.end(); ++itB, all++)
-                counter += (int)_add_collision(*itA, *itB);
+            for (itA = 0; itA != sizeA; ++itA)
+              for (itB = 0; itB != sizeB; ++itB, all++)
+                counter += (int)_add_collision(cellA[itA], cellB[itB]);
           else {
-            assert(cellA == cellB);
-            int m = sizeA / 2 + 1;
-            for (int i = 0; i < m; i++)
-              for (int j = i + 1; j < sizeA; j++, all++)
+            m = sizeA / 2 + 1;
+            for (i = 0; i < m; i++)
+              for (j = i + 1; j < sizeA; j++, all++)
                 counter += (int)_add_collision(cellA[i], cellA[j]);
           }
         }
       }
 
-    for (int i = 0; i < n; i++)
+    for (i = 0; i < n; i++)
       if (pow(x[i] - nut.x, 2) + pow(y[i] - nut.y, 2) <= pow(radius + nut.r, 2))
-        if (nut_c2p.find(i) == nut_c2p.end())
-          nut_c2p[i] = Collision();
+        if (nut_c2p.find(i) == nut_c2p.end()) {
+          nut_c2p[i].ux = 0;
+          nut_c2p[i].uy = 0;
+        }
   }
 
   void _update_collisions() {
-    for (map<int, Collision>::iterator it = collisions.begin();
+    for (std::map<int, Collision>::iterator it = collisions.begin();
          it != collisions.end(); ++it) {
       int a = it->first % n;
       int b = it->first / n;
@@ -457,8 +349,8 @@ struct GranularFlowCollisionProcessing {
       double f1[2] = {0, 0};
       double f2[2] = {0, 0};
 
-      it->second.compute(dt, radius, radius, r, v1, v2, om[a], om[b], f1, f2,
-                         to[a], to[b]);
+      collision_compute(it->second.ux, it->second.uy, dt, radius, radius, r, v1,
+                        v2, om[a], om[b], f1, f2, to[a], to[b]);
 
       ax[a] += f1[0];
       ay[a] += f1[1];
@@ -467,9 +359,8 @@ struct GranularFlowCollisionProcessing {
       ay[b] += f2[1];
     }
 
-    // m = r^2 P  = 1, M = k^2 r^2 P = k^2 , k = R/r
     double factor = pow(radius / nut.r, 2);
-    for (map<int, Collision>::iterator it = nut_c2p.begin();
+    for (std::map<int, Collision>::iterator it = nut_c2p.begin();
          it != nut_c2p.end(); ++it) {
       int a = it->first;
 
@@ -485,8 +376,8 @@ struct GranularFlowCollisionProcessing {
       double f1[2] = {0, 0};
       double f2[2] = {0, 0};
 
-      it->second.compute(dt, nut.r, radius, r, v1, v2, om[a], nut.omega, f1, f2,
-                         to[a], nut.domegadt);
+      collision_compute(it->second.ux, it->second.uy, dt, nut.r, radius, r, v1,
+                        v2, om[a], nut.omega, f1, f2, to[a], nut.domegadt);
 
       assert(!isnan(f1[0]));
       assert(!isnan(f1[1]));
@@ -502,20 +393,18 @@ struct GranularFlowCollisionProcessing {
     }
   }
 
-  // called by _add_new_bcollisions
   void _add_bcollision(int a) {
     for (int p = 0; p < 4; p++) {
-      //	 double x[2] = {x[a], y[a]};
-      double d = box.distance_to_plane(
-          x[a], y[a],
-          p); // box_planes[p][0]*x[0] +
-              // box_planes[p][1]*x[1] + box_planes[p][2] ;
+      double d = box_distance_to_plane(x[a], y[a], p);
 
       if (fabs(d) <= radius) {
         int collision_id = a + n * p;
 
-        if (boundary_collisions.find(collision_id) == boundary_collisions.end())
-          boundary_collisions[collision_id] = Collision();
+        if (boundary_collisions.find(collision_id) ==
+            boundary_collisions.end()) {
+          boundary_collisions[collision_id].ux = 0;
+          boundary_collisions[collision_id].uy = 0;
+        }
       }
     }
   }
@@ -527,56 +416,64 @@ struct GranularFlowCollisionProcessing {
       _add_bcollision(i);
 
     for (int p = 0; p < 4; p++) {
-      double d = box.distance_to_plane(nut.x, nut.y, p);
+      double d = box_distance_to_plane(nut.x, nut.y, p);
 
       if (fabs(d) <= nut.r) {
         int collision_id = p;
 
-        if (nut_c2b.find(collision_id) == nut_c2b.end())
-          nut_c2b[collision_id] = Collision();
+        if (nut_c2b.find(collision_id) == nut_c2b.end()) {
+          nut_c2b[collision_id].ux = 0;
+          nut_c2b[collision_id].uy = 0;
+        }
       }
     }
   }
 
-  // remove obsolete particle-boundary collisions from the particle-boundary
-  // collision container
   void _remove_old_bcollisions() {
-    {
-      vector<int> to_remove;
-
-      for (map<int, Collision>::iterator it = boundary_collisions.begin();
-           it != boundary_collisions.end(); ++it) {
-        int a = it->first % n;
-        int p = it->first / n;
-
-        double d = box.distance_to_plane(x[a], y[a], p);
-        // box_planes[p][0]*particles.read(a, 0) +
-        // box_planes[p][1]*particles.read(a,1) + box_planes[p][2] ;
-
-        if (fabs(d) > radius)
-          to_remove.push_back(it->first);
+    int *rem;
+    int nrem;
+    int crem;
+    int i;
+    int a;
+    int p;
+    double d;
+    nrem = 0;
+    crem = 0;
+    rem = NULL;
+    for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
+         it != boundary_collisions.end(); ++it) {
+      a = it->first % n;
+      p = it->first / n;
+      d = box_distance_to_plane(x[a], y[a], p);
+      if (fabs(d) > radius) {
+        if (nrem >= crem) {
+          crem = 2 * crem + 1;
+          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+            fprintf(stderr, "realloc failed\n");
+            exit(1);
+          }
+        }
+        rem[nrem++] = it->first;
       }
-
-      for (vector<int>::iterator it = to_remove.begin(); it != to_remove.end();
-           it++)
-        boundary_collisions.erase(*it);
     }
-
-    // nut
-    {
-      vector<int> to_remove;
-
-      for (int p = 0; p < 4; p++) {
-        double d = box.distance_to_plane(nut.x, nut.y, p);
-
-        if (fabs(d) > nut.r)
-          to_remove.push_back(p);
+    for (i = 0; i < nrem; i++)
+      boundary_collisions.erase(rem[i]);
+    nrem = 0;
+    for (p = 0; p < 4; p++) {
+      d = box_distance_to_plane(nut.x, nut.y, p);
+      if (fabs(d) > nut.r) {
+        if (nrem >= crem) {
+          crem = 2 * crem + 1;
+          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+            fprintf(stderr, "realloc failed\n");
+            exit(1);
+          }
+        }
+        rem[nrem++] = p;
       }
-
-      for (vector<int>::iterator it = to_remove.begin(); it != to_remove.end();
-           it++)
-        nut_c2b.erase(*it);
     }
+    for (i = 0; i < nrem; i++)
+      nut_c2b.erase(rem[i]);
   }
 
   // perform 1 step for all particle-boundary collisions
@@ -588,20 +485,22 @@ struct GranularFlowCollisionProcessing {
     // 2. solve for the collision
     // 3. store the force&torque felt by the particle, discard the ghost infos
 
-    double d = min(-1e-5, box.distance_to_plane(x, y, p));
+    double d = std::min(-1e-5, box_distance_to_plane(x, y, p));
     double x1[2] = {x, y};
     double v1[2] = {u, v};
 
     // 1.
-    double ghost[2] = {x1[0] + (-2 * d - 1e-2) * box.normal(0, p),
-                       x1[1] + (-2 * d - 1e-2) * box.normal(1, p)};
-    double v1DOTn = v1[0] * box.normal(0, p) + v1[1] * box.normal(1, p);
+    double ghost[2] = {x1[0] + (-2 * d - 1e-2) * box.planes[p][0],
+                       x1[1] + (-2 * d - 1e-2) * box.planes[p][1]};
+    double v1DOTn = v1[0] * box.planes[p][0] + v1[1] * box.planes[p][1];
 
     double vbox[2] = {0, 0};
-    box.velocity(ghost[0], ghost[1], vbox[0], vbox[1]);
-
-    double vghost[2] = {vbox[0] - 2 * v1DOTn * box.normal(0, p),
-                        vbox[1] - 2 * v1DOTn * box.normal(1, p)};
+    vbox[0] = -box.angular_speed * ghost[1] -
+              box.tinfo.r1 * box.tinfo.a * sin(box.tinfo.a * box.t);
+    vbox[1] = +box.angular_speed * ghost[0] +
+              box.tinfo.r2 * box.tinfo.a * sin(box.tinfo.a * box.t);
+    double vghost[2] = {vbox[0] - 2 * v1DOTn * box.planes[p][0],
+                        vbox[1] - 2 * v1DOTn * box.planes[p][1]};
 
     double ghost_omega = -omega;
 
@@ -614,8 +513,9 @@ struct GranularFlowCollisionProcessing {
       double dummy_domegadt = 0;
 
       // 2.
-      collision.compute(dt, radius, radius, r, v1, vghost, omega, ghost_omega,
-                        f1, f_dummy, domegadt, dummy_domegadt);
+      collision_compute(collision.ux, collision.uy, dt, radius, radius, r, v1,
+                        vghost, omega, ghost_omega, f1, f_dummy, domegadt,
+                        dummy_domegadt);
 
       assert(!isnan(f1[0]));
       assert(!isnan(f1[1]));
@@ -627,43 +527,45 @@ struct GranularFlowCollisionProcessing {
   }
 
   void _update_bcollisions() {
-    for (map<int, Collision>::iterator it = boundary_collisions.begin();
+    for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
          it != boundary_collisions.end(); ++it) {
-      // identify the particle and the boundary that are involved in the
-      // particle-boundary collision
       int a = it->first % n;
       int p = it->first / n;
 
       _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
                          ax[a], ay[a], to[a]);
     }
-
-    for (map<int, Collision>::iterator it = nut_c2b.begin();
+    for (std::map<int, Collision>::iterator it = nut_c2b.begin();
          it != nut_c2b.end(); ++it) {
-      // identify the particle and the boundary that are involved in the
-      // particle-boundary collision
       int p = it->first;
-
       _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
                          it->second, nut.ax, nut.ay, nut.domegadt);
     }
   }
 
-  // allocate cell lists covering from [-2, 2]x[-2, 2]
-  GranularFlowCollisionProcessing()
-      : collisions(), radius(0.02), t(0), bit_table(n),
-        threshold_collision_p2p(4 * 0.02 * 0.02) {}
-
-  void operator()() {
-    // this is clear, right?
-    _remove_old_collisions();
-    cells.clear();
+  void update(void) {
+    int k;
+    int i;
+    int idx;
+    int idy;
     double hx = 4. / sX;
     double hy = 4. / sY;
-    for (int i = 0; i < n; i++) {
-      int idx = max(0, min(sX - 1, (int)floor((x[i] + 2) / hx)));
-      int idy = max(0, min(sY - 1, (int)floor((y[i] + 2) / hy)));
-      cells.insert(idx, idy, i);
+    _remove_old_collisions();
+    memset(cells.n, 0, sizeof cells.n);
+    for (i = 0; i < n; i++) {
+      idx = std::max(0, std::min(sX - 1, (int)floor((x[i] + 2) / hx)));
+      idy = std::max(0, std::min(sY - 1, (int)floor((y[i] + 2) / hy)));
+      k = sX * idy + idx;
+      if (cells.n[k] >= cells.cap[k]) {
+        cells.cap[k] = 2 * cells.cap[k] + 1;
+        if ((cells.data[k] = (int *)realloc(
+                 cells.data[k], cells.cap[k] * sizeof *cells.data[k])) ==
+            NULL) {
+          fprintf(stderr, "realloc failed\n");
+          exit(1);
+        }
+      }
+      cells.data[k][cells.n[k]++] = i;
     }
     _add_new_collisions();
     _update_collisions();
@@ -672,12 +574,9 @@ struct GranularFlowCollisionProcessing {
     _add_new_bcollisions();
     _update_bcollisions();
 
-    box.update();
-    nut.update();
+    box_update();
+    nut_update();
   }
-
-  // retrieve Nut height
-  double getNutHeight() { return -box.distance_to_plane(nut.x, nut.y, 1); }
 } gfcp;
 
 GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
@@ -688,7 +587,6 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   GLint iViewport[4];
   GLint nImageSize[2];
   bool bUseViewport = (nSizeX == 0 && nSizeY == 0);
-
   if (bUseViewport) {
     glGetIntegerv(GL_VIEWPORT, iViewport);
     nImageSize[0] = iViewport[2];
@@ -697,23 +595,16 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
     nImageSize[0] = nSizeX;
     nImageSize[1] = nSizeY;
   }
-
   lImageSize = nImageSize[0] * nImageSize[1] * 4;
-
-  // Allocate block. If this doesn't work, go home
   pBits = (GLbyte *)malloc(lImageSize);
   if (pBits == NULL)
     return 0;
-
-  // Read bits from color buffer
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
   glPixelStorei(GL_PACK_SKIP_ROWS, 0);
   glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
   glReadPixels(0, 0, nImageSize[0], nImageSize[1], GL_BGRA_EXT,
                GL_UNSIGNED_BYTE, pBits);
-
-  // Initialize the Targa header
   tgaHeader.identsize = 0;
   tgaHeader.colorMapType = 0;
   tgaHeader.imageType = 2;
@@ -726,44 +617,48 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   tgaHeader.height = nImageSize[1];
   tgaHeader.bits = 32;
   tgaHeader.descriptor = 8;
-
-  // Attempt to open the file
   pFile = fopen(szFileName, "wb");
   if (pFile == NULL) {
-    free(pBits); // Free buffer and return error
+    free(pBits);
     return 0;
   }
-
-  // Write the header
-  fwrite(&tgaHeader, sizeof(TGAHEADER), 1, pFile);
-
-  // Write the image data
+  fwrite(&tgaHeader, sizeof(tgaHeader), 1, pFile);
   fwrite(pBits, lImageSize, 1, pFile);
-
-  // Free temporary buffer and close the file
   free(pBits);
   fclose(pFile);
-
-  // Success!
   return 1;
 }
 
-void launch_fitnessFunction() {
-  double params[3];
+static void loop() {
+  double r1_over_r2;
+  double a1;
+  double a2;
+  argv++;
+  r1_over_r2 = atof(*argv++);
+  a1 = atof(*argv++);
+  a2 = atof(*argv++);
+  box.angular_speed = 0;
+  box.half_width = 1.0;
+  box.aspect_ratio = 0.4;
+  box.a2 = a2;
+  box.angle = 0;
+  box.t = 0;
+  box.tinfo.a = a1;
+  box.tinfo.a_desired = a1;
+  box.tinfo.r1 = 0.05;
+  box.tinfo.r2 = box.tinfo.r1 / r1_over_r2;
+  box_update();
 
-  if (runtime_inputs.size() < 4) {
-    printf("Aborting. It is missing some input.\n");
-    abort();
-  }
-
-  params[0] = atof(runtime_inputs[1].c_str());
-  params[1] = atof(runtime_inputs[2].c_str());
-  params[2] = atof(runtime_inputs[3].c_str());
-  box_ini(params[0], params[1], params[2]);
-
-  bStoreImages = 0;
-  if (runtime_inputs.size() > 4 && runtime_inputs[4] == "saveimages")
-    bStoreImages = 1;
+  nut.r = 0.2;
+  nut.x = 0.0;
+  nut.y = -0.7;
+  nut.u = 0;
+  nut.v = 0;
+  nut.ax = 0;
+  nut.ay = 0;
+  nut.omega = 0;
+  nut.domegadt = 0;
+  bStoreImages = *argv && strcmp("saveimages", *argv) == 0;
 
   for (int i = 0; i < n; i++) {
     double h = 0.04;
@@ -773,7 +668,6 @@ void launch_fitnessFunction() {
     x[i] = -0.4 + (ix + 0.5) * h;
     y[i] = -0.5 + (iy + 0.5) * h;
   }
-  //  gfcp = new GranularFlowCollisionProcessing();
   for (int i = 0; i < n; i++)
     if (x[i] > 0) {
       color[i][0] = 210. / 256;
@@ -790,20 +684,19 @@ void launch_fitnessFunction() {
   double time = 0;
   int iframe = 0;
 
-  // collect the samples about the "altitude" of the nut with respect to the
-  // box's bottom
   double sum = 0;
   int nsample = 0;
   for (int step = 0; time < final_time; step++) {
     for (int i = 0; i < n; i++)
       ay[i] -= 1;
-    gfcp();
+
+    gfcp.update();
     for (int i = 0; i < n; i++) {
       vx[i] += dt * ax[i];
       vy[i] += dt * ay[i];
     }
-    memset(ax, 0, sizeof(double) * n);
-    memset(ay, 0, sizeof(double) * n);
+    memset(ax, 0, sizeof ax);
+    memset(ay, 0, sizeof ay);
     double radius = 0.02;
     double inv_momOFinertia = 1. / (radius * radius);
     double factor = dt * inv_momOFinertia;
@@ -818,15 +711,29 @@ void launch_fitnessFunction() {
 
     // if we are about to end, start measure the nuts y-position
     if (time > 0.95 * final_time) {
-      sum += box.distance_to_plane(nut.x, nut.y, 1);
+      sum += box_distance_to_plane(nut.x, nut.y, 1);
       nsample++;
     }
 
-    // do some frames
     if (step % steps_per_frame == 0) {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-      box.view();
-      nut.draw();
+
+      glLineWidth(2.);
+      glColor3f(1, 1, 1);
+      glBegin(GL_LINE_LOOP);
+      double p[4][2] = {-1.01, -1.01, +1.01, -1.01, +1.01, +1.01, -1.01, +1.01};
+      double R[2][2] = {cos(box.angle), -sin(box.angle), sin(box.angle),
+                        cos(box.angle)};
+      for (int i = 0; i < 4; i++) {
+        double q[2] = {R[0][0] * p[i][0] * box.half_width * box.aspect_ratio +
+                           R[0][1] * p[i][1] * box.half_width,
+                       R[1][0] * p[i][0] * box.half_width * box.aspect_ratio +
+                           R[1][1] * p[i][1] * box.half_width};
+        glVertex2f(q[0] + box.center[0], q[1] + box.center[1]);
+      }
+      glEnd();
+
+      paintSphere(nut.x, nut.y, 1.3 * 179. / 256, 1.3 * 89. / 256, 0, nut.r);
 
       for (int i = 0; i < n; i++)
         paintSphere(x[i], y[i], color[i][0], color[i][1], color[i][2], 0.02);
@@ -854,16 +761,14 @@ void launch_fitnessFunction() {
   exit(0);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv0) {
   assert(argc >= 4);
-  for (int i = 0; i < argc; i++)
-    runtime_inputs.push_back(string(argv[i]));
-
+  argv = argv0;
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
   glutInitWindowSize(512, 512);
-  glutCreateWindow("FitnessFunction");
-  glutIdleFunc(launch_fitnessFunction);
+  glutCreateWindow("Brazil Nut");
+  glutIdleFunc(loop);
   glPointSize(4);
   glClearColor(0, 0, 0, 0);
   glMatrixMode(GL_PROJECTION);
