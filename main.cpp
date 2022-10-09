@@ -621,7 +621,7 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
     free(pBits);
     return 0;
   }
-  fwrite(&tgaHeader, sizeof(tgaHeader), 1, pFile);
+  fwrite(&tgaHeader, sizeof tgaHeader, 1, pFile);
   fwrite(pBits, lImageSize, 1, pFile);
   free(pBits);
   fclose(pFile);
