@@ -44,6 +44,11 @@ static double color[n][3];
 static const double radius = 0.02;
 static const double threshold_collision_p2p = 4 * 0.02 * 0.02;
 
+static int imin(int x, int y) { return x < y ? x : y; }
+static int imax(int x, int y) { return x > y ? x : y; }
+static double dmin(double x, double y) { return x < y ? x : y; }
+static double dmax(double x, double y) { return x > y ? x : y; }
+
 static void paintSphere(double x, double y, GLfloat r, GLfloat g, GLfloat b,
                         GLdouble radius) {
   glPushAttrib(GL_ENABLE_BIT);
@@ -152,7 +157,7 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
   double gt = 0;
   double IrI = sqrt(pow(r[0], 2) + pow(r[1], 2));
   double invIrI = 1. / sqrt(pow(r[0], 2) + pow(r[1], 2));
-  double delta = std::max(0., radius1 + radius2 - IrI);
+  double delta = dmax(0., radius1 + radius2 - IrI);
   double v[2] = {v1[0] - v2[0], v1[1] - v2[1]};
   double n[2] = {invIrI * r[0], invIrI * r[1]};
   double vDOTn = v[0] * n[0] + v[1] * n[1];
@@ -183,7 +188,7 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
 };
 
 static int table_id(int x, int y) {
-  int m = std::min(x, y);
+  int m = imin(x, y);
   return ((m * (term - m)) >> 1) + (x + y - 2 * m - 1);
 }
 
@@ -211,7 +216,7 @@ struct GranularFlowCollisionProcessing {
   bool _add_collision(int a, int b) {
     if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
       if (!table_get(a, b)) {
-        int minab = std::min(a, b);
+        int minab = imin(a, b);
         collisions[minab + n * (a + b - minab)].ux = 0;
         collisions[minab + n * (a + b - minab)].uy = 0;
         table_set(a, b);
@@ -485,7 +490,7 @@ struct GranularFlowCollisionProcessing {
     // 2. solve for the collision
     // 3. store the force&torque felt by the particle, discard the ghost infos
 
-    double d = std::min(-1e-5, box_distance_to_plane(x, y, p));
+    double d = dmin(-1e-5, box_distance_to_plane(x, y, p));
     double x1[2] = {x, y};
     double v1[2] = {u, v};
 
@@ -553,8 +558,8 @@ struct GranularFlowCollisionProcessing {
     _remove_old_collisions();
     memset(cells.n, 0, sizeof cells.n);
     for (i = 0; i < n; i++) {
-      idx = std::max(0, std::min(sX - 1, (int)floor((x[i] + 2) / hx)));
-      idy = std::max(0, std::min(sY - 1, (int)floor((y[i] + 2) / hy)));
+      idx = imax(0, imin(sX - 1, (int)floor((x[i] + 2) / hx)));
+      idy = imax(0, imin(sY - 1, (int)floor((y[i] + 2) / hy)));
       k = sX * idy + idx;
       if (cells.n[k] >= cells.cap[k]) {
         cells.cap[k] = 2 * cells.cap[k] + 1;
