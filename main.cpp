@@ -7,7 +7,7 @@
 #include <string.h>
 
 #pragma pack(1)
-struct TGAHEADER {
+static struct {
   GLbyte identsize;
   GLbyte colorMapType;
   GLbyte imageType;
@@ -20,7 +20,7 @@ struct TGAHEADER {
   unsigned short height;
   GLbyte bits;
   GLbyte descriptor;
-};
+} tgaHeader;
 #pragma pack(8)
 enum { sX = 75, sY = 75, n = 600, term = 2 * n - 1 };
 static int domain_size = 2;
@@ -581,7 +581,6 @@ struct GranularFlowCollisionProcessing {
 
 GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   FILE *pFile;
-  struct TGAHEADER tgaHeader;
   unsigned long lImageSize;
   GLbyte *pBits = NULL;
   GLint iViewport[4];
