@@ -113,13 +113,13 @@ static double box_distance_to_plane(double x, double y, int p) {
 static void box_update(void) {
   box.t += dt;
 
-  static bool bGo = false;
+  static int bGo = 0;
   if (!bGo && box.t < 4) {
     box.tinfo.a = 0;
     box.angular_speed = 0;
     box.angle = 0;
-  } else if (bGo == false && box.t >= 4) {
-    bGo = true;
+  } else if (bGo == 0 && box.t >= 4) {
+    bGo = 1;
     box.t = 0;
   } else if (bGo) {
     box.tinfo.a = box.tinfo.a_desired;
@@ -373,7 +373,7 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   GLbyte *pBits = NULL;
   GLint iViewport[4];
   GLint nImageSize[2];
-  bool bUseViewport = (nSizeX == 0 && nSizeY == 0);
+  int bUseViewport = (nSizeX == 0 && nSizeY == 0);
   if (bUseViewport) {
     glGetIntegerv(GL_VIEWPORT, iViewport);
     nImageSize[0] = iViewport[2];
