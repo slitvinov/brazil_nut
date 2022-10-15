@@ -43,6 +43,14 @@ static double to[n];
 static double color[n][3];
 static const double radius = 0.02;
 static const double threshold_collision_p2p = 4 * 0.02 * 0.02;
+struct Collision {
+  double ux;
+  double uy;
+};
+static std::map<int, Collision> collisions;
+static std::map<int, Collision> boundary_collisions;
+static std::map<int, Collision> nut_c2p;
+static std::map<int, Collision> nut_c2b;
 
 static int imin(int x, int y) { return x < y ? x : y; }
 static int imax(int x, int y) { return x > y ? x : y; }
@@ -141,11 +149,6 @@ static void box_update(void) {
   }
 }
 
-struct Collision {
-  double ux;
-  double uy;
-};
-
 static void collision_compute(double ux, double uy, double dt, double radius1,
                               double radius2, double r[2], double v1[2],
                               double v2[2], double omega1, double omega2,
@@ -207,382 +210,338 @@ static void table_set(int x, int y) {
   table[bit_id >> 5] |= (1 << (bit_id & 0x1f));
 }
 
-struct GranularFlowCollisionProcessing {
-  std::map<int, Collision> collisions;
-  std::map<int, Collision> boundary_collisions;
-  std::map<int, Collision> nut_c2p;
-  std::map<int, Collision> nut_c2b;
+bool _add_collision(int a, int b) {
+  if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
+    if (!table_get(a, b)) {
+      int minab = imin(a, b);
+      collisions[minab + n * (a + b - minab)].ux = 0;
+      collisions[minab + n * (a + b - minab)].uy = 0;
+      table_set(a, b);
 
-  bool _add_collision(int a, int b) {
-    if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
-      if (!table_get(a, b)) {
-        int minab = imin(a, b);
-        collisions[minab + n * (a + b - minab)].ux = 0;
-        collisions[minab + n * (a + b - minab)].uy = 0;
-        table_set(a, b);
-
-        return true;
-      }
-
-    return false;
-  }
-
-  void _remove_old_collisions() {
-    int *rem;
-    int nrem;
-    int crem;
-    int i;
-    int a;
-    int b = 0;
-
-    nrem = 0;
-    crem = 0;
-    rem = NULL;
-    for (std::map<int, Collision>::iterator it = collisions.begin();
-         it != collisions.end(); ++it) {
-      a = it->first % n;
-      b = it->first / n;
-      if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) > threshold_collision_p2p) {
-        if (nrem >= crem) {
-          crem = 2 * crem + 1;
-          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
-            fprintf(stderr, "realloc failed\n");
-            exit(1);
-          }
-        }
-        rem[nrem++] = it->first;
-        table_clear(a, b);
-      }
-    }
-    for (i = 0; i < nrem; i++)
-      collisions.erase(rem[i]);
-    nrem = 0;
-    for (std::map<int, Collision>::iterator it = nut_c2p.begin();
-         it != nut_c2p.end(); ++it) {
-      a = it->first;
-      if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) >
-          pow(radius + nut.r, 2)) {
-        if (nrem >= crem) {
-          crem = 2 * crem + 1;
-          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
-            fprintf(stderr, "realloc failed\n");
-            exit(1);
-          }
-        }
-        rem[nrem++] = it->first;
-        table_clear(a, b);
-      }
-    }
-    for (i = 0; i < nrem; i++)
-      nut_c2p.erase(rem[i]);
-    free(rem);
-  }
-
-  void _add_new_collisions() {
-    int all;
-    int *cellA;
-    int *cellB;
-    int code;
-    int counter;
-    int i;
-    int isx;
-    int isy;
-    int itA;
-    int itB;
-    int ix;
-    int iy;
-    int j;
-    int m;
-    int sizeA;
-    int sizeB;
-
-    all = 0;
-    counter = 0;
-    for (iy = 0; iy < sX; iy++)
-      for (ix = 0; ix < sY; ix++) {
-        cellA = cells.data[sX * iy + ix];
-        sizeA = cells.n[sX * iy + ix];
-        if (sizeA == 0)
-          continue;
-
-        for (code = 0; code < 9; code++) {
-          isx = (ix + (code % 3) - 1);
-          isy = (iy + (code / 3) - 1);
-
-          if (isx < 0 || isx >= sX || isy < 0 || isy >= sY)
-            continue;
-
-          cellB = cells.data[sX * isy + isx];
-          sizeB = cells.n[sX * isy + isx];
-          if (sizeB == 0)
-            continue;
-
-          if (code != 1 + 3)
-            for (itA = 0; itA != sizeA; ++itA)
-              for (itB = 0; itB != sizeB; ++itB, all++)
-                counter += (int)_add_collision(cellA[itA], cellB[itB]);
-          else {
-            m = sizeA / 2 + 1;
-            for (i = 0; i < m; i++)
-              for (j = i + 1; j < sizeA; j++, all++)
-                counter += (int)_add_collision(cellA[i], cellA[j]);
-          }
-        }
-      }
-
-    for (i = 0; i < n; i++)
-      if (pow(x[i] - nut.x, 2) + pow(y[i] - nut.y, 2) <= pow(radius + nut.r, 2))
-        if (nut_c2p.find(i) == nut_c2p.end()) {
-          nut_c2p[i].ux = 0;
-          nut_c2p[i].uy = 0;
-        }
-  }
-
-  void _update_collisions() {
-    for (std::map<int, Collision>::iterator it = collisions.begin();
-         it != collisions.end(); ++it) {
-      int a = it->first % n;
-      int b = it->first / n;
-
-      double x1[2] = {x[a], y[a]};
-      double x2[2] = {x[b], y[b]};
-      double r[2] = {x1[0] - x2[0], x1[1] - x2[1]};
-
-      double v1[2] = {vx[a], vy[a]};
-      double v2[2] = {vx[b], vy[b]};
-
-      double f1[2] = {0, 0};
-      double f2[2] = {0, 0};
-
-      collision_compute(it->second.ux, it->second.uy, dt, radius, radius, r, v1,
-                        v2, om[a], om[b], f1, f2, to[a], to[b]);
-
-      ax[a] += f1[0];
-      ay[a] += f1[1];
-
-      ax[b] += f2[0];
-      ay[b] += f2[1];
+      return true;
     }
 
-    double factor = pow(radius / nut.r, 2);
-    for (std::map<int, Collision>::iterator it = nut_c2p.begin();
-         it != nut_c2p.end(); ++it) {
-      int a = it->first;
+  return false;
+}
 
-      double x1[2] = {x[a], y[a]};
-      double r[2] = {x1[0] - nut.x, x1[1] - nut.y};
+void _remove_old_collisions() {
+  int *rem;
+  int nrem;
+  int crem;
+  int i;
+  int a;
+  int b = 0;
 
-      assert(pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) <=
-             pow(radius + nut.r, 2));
-
-      double v1[2] = {vx[a], vy[a]};
-      double v2[2] = {nut.u, nut.v};
-
-      double f1[2] = {0, 0};
-      double f2[2] = {0, 0};
-
-      collision_compute(it->second.ux, it->second.uy, dt, nut.r, radius, r, v1,
-                        v2, om[a], nut.omega, f1, f2, to[a], nut.domegadt);
-
-      assert(!isnan(f1[0]));
-      assert(!isnan(f1[1]));
-
-      assert(!isnan(f2[0]));
-      assert(!isnan(f2[1]));
-
-      ax[a] += f1[0];
-      ay[a] += f1[1];
-
-      nut.ax += factor * f2[0];
-      nut.ay += factor * f2[1];
-    }
-  }
-
-  void _add_bcollision(int a) {
-    for (int p = 0; p < 4; p++) {
-      double d = box_distance_to_plane(x[a], y[a], p);
-
-      if (fabs(d) <= radius) {
-        int collision_id = a + n * p;
-
-        if (boundary_collisions.find(collision_id) ==
-            boundary_collisions.end()) {
-          boundary_collisions[collision_id].ux = 0;
-          boundary_collisions[collision_id].uy = 0;
-        }
-      }
-    }
-  }
-
-  // detect and add new particle-boundary collisions to the particle-boundary
-  // collision container
-  void _add_new_bcollisions() {
-    for (int i = 0; i < n; i++)
-      _add_bcollision(i);
-
-    for (int p = 0; p < 4; p++) {
-      double d = box_distance_to_plane(nut.x, nut.y, p);
-
-      if (fabs(d) <= nut.r) {
-        int collision_id = p;
-
-        if (nut_c2b.find(collision_id) == nut_c2b.end()) {
-          nut_c2b[collision_id].ux = 0;
-          nut_c2b[collision_id].uy = 0;
-        }
-      }
-    }
-  }
-
-  void _remove_old_bcollisions() {
-    int *rem;
-    int nrem;
-    int crem;
-    int i;
-    int a;
-    int p;
-    double d;
-    nrem = 0;
-    crem = 0;
-    rem = NULL;
-    for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
-         it != boundary_collisions.end(); ++it) {
-      a = it->first % n;
-      p = it->first / n;
-      d = box_distance_to_plane(x[a], y[a], p);
-      if (fabs(d) > radius) {
-        if (nrem >= crem) {
-          crem = 2 * crem + 1;
-          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
-            fprintf(stderr, "realloc failed\n");
-            exit(1);
-          }
-        }
-        rem[nrem++] = it->first;
-      }
-    }
-    for (i = 0; i < nrem; i++)
-      boundary_collisions.erase(rem[i]);
-    nrem = 0;
-    for (p = 0; p < 4; p++) {
-      d = box_distance_to_plane(nut.x, nut.y, p);
-      if (fabs(d) > nut.r) {
-        if (nrem >= crem) {
-          crem = 2 * crem + 1;
-          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
-            fprintf(stderr, "realloc failed\n");
-            exit(1);
-          }
-        }
-        rem[nrem++] = p;
-      }
-    }
-    for (i = 0; i < nrem; i++)
-      nut_c2b.erase(rem[i]);
-  }
-
-  // perform 1 step for all particle-boundary collisions
-  void _update_bcollision(int p, double radius, double x, double y, double u,
-                          double v, double omega, Collision &collision,
-                          double &fx, double &fy, double &domegadt) {
-    // 1. create a mirrored particle at the other side of the boundary (ghost
-    // particle)
-    // 2. solve for the collision
-    // 3. store the force&torque felt by the particle, discard the ghost infos
-
-    double d = dmin(-1e-5, box_distance_to_plane(x, y, p));
-    double x1[2] = {x, y};
-    double v1[2] = {u, v};
-
-    // 1.
-    double ghost[2] = {x1[0] + (-2 * d - 1e-2) * box.planes[p][0],
-                       x1[1] + (-2 * d - 1e-2) * box.planes[p][1]};
-    double v1DOTn = v1[0] * box.planes[p][0] + v1[1] * box.planes[p][1];
-
-    double vbox[2] = {0, 0};
-    vbox[0] = -box.angular_speed * ghost[1] -
-              box.tinfo.r1 * box.tinfo.a * sin(box.tinfo.a * box.t);
-    vbox[1] = +box.angular_speed * ghost[0] +
-              box.tinfo.r2 * box.tinfo.a * sin(box.tinfo.a * box.t);
-    double vghost[2] = {vbox[0] - 2 * v1DOTn * box.planes[p][0],
-                        vbox[1] - 2 * v1DOTn * box.planes[p][1]};
-
-    double ghost_omega = -omega;
-
-    double r[2] = {x1[0] - ghost[0], x1[1] - ghost[1]};
-
-    double f1[2] = {0, 0};
-
-    {
-      double f_dummy[2] = {0, 0};
-      double dummy_domegadt = 0;
-
-      // 2.
-      collision_compute(collision.ux, collision.uy, dt, radius, radius, r, v1,
-                        vghost, omega, ghost_omega, f1, f_dummy, domegadt,
-                        dummy_domegadt);
-
-      assert(!isnan(f1[0]));
-      assert(!isnan(f1[1]));
-    }
-
-    // 3.
-    fx += f1[0];
-    fy += f1[1];
-  }
-
-  void _update_bcollisions() {
-    for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
-         it != boundary_collisions.end(); ++it) {
-      int a = it->first % n;
-      int p = it->first / n;
-
-      _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
-                         ax[a], ay[a], to[a]);
-    }
-    for (std::map<int, Collision>::iterator it = nut_c2b.begin();
-         it != nut_c2b.end(); ++it) {
-      int p = it->first;
-      _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
-                         it->second, nut.ax, nut.ay, nut.domegadt);
-    }
-  }
-
-  void update(void) {
-    int k;
-    int i;
-    int idx;
-    int idy;
-    double hx = 4. / sX;
-    double hy = 4. / sY;
-    _remove_old_collisions();
-    memset(cells.n, 0, sizeof cells.n);
-    for (i = 0; i < n; i++) {
-      idx = imax(0, imin(sX - 1, (int)floor((x[i] + 2) / hx)));
-      idy = imax(0, imin(sY - 1, (int)floor((y[i] + 2) / hy)));
-      k = sX * idy + idx;
-      if (cells.n[k] >= cells.cap[k]) {
-        cells.cap[k] = 2 * cells.cap[k] + 1;
-        if ((cells.data[k] = (int *)realloc(
-                 cells.data[k], cells.cap[k] * sizeof *cells.data[k])) ==
-            NULL) {
+  nrem = 0;
+  crem = 0;
+  rem = NULL;
+  for (std::map<int, Collision>::iterator it = collisions.begin();
+       it != collisions.end(); ++it) {
+    a = it->first % n;
+    b = it->first / n;
+    if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) > threshold_collision_p2p) {
+      if (nrem >= crem) {
+        crem = 2 * crem + 1;
+        if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
           fprintf(stderr, "realloc failed\n");
           exit(1);
         }
       }
-      cells.data[k][cells.n[k]++] = i;
+      rem[nrem++] = it->first;
+      table_clear(a, b);
     }
-    _add_new_collisions();
-    _update_collisions();
-
-    _remove_old_bcollisions();
-    _add_new_bcollisions();
-    _update_bcollisions();
-
-    box_update();
-    nut_update();
   }
-} gfcp;
+  for (i = 0; i < nrem; i++)
+    collisions.erase(rem[i]);
+  nrem = 0;
+  for (std::map<int, Collision>::iterator it = nut_c2p.begin();
+       it != nut_c2p.end(); ++it) {
+    a = it->first;
+    if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) > pow(radius + nut.r, 2)) {
+      if (nrem >= crem) {
+        crem = 2 * crem + 1;
+        if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+          fprintf(stderr, "realloc failed\n");
+          exit(1);
+        }
+      }
+      rem[nrem++] = it->first;
+      table_clear(a, b);
+    }
+  }
+  for (i = 0; i < nrem; i++)
+    nut_c2p.erase(rem[i]);
+  free(rem);
+}
+
+void _add_new_collisions() {
+  int all;
+  int *cellA;
+  int *cellB;
+  int code;
+  int counter;
+  int i;
+  int isx;
+  int isy;
+  int itA;
+  int itB;
+  int ix;
+  int iy;
+  int j;
+  int m;
+  int sizeA;
+  int sizeB;
+
+  all = 0;
+  counter = 0;
+  for (iy = 0; iy < sX; iy++)
+    for (ix = 0; ix < sY; ix++) {
+      cellA = cells.data[sX * iy + ix];
+      sizeA = cells.n[sX * iy + ix];
+      if (sizeA == 0)
+        continue;
+
+      for (code = 0; code < 9; code++) {
+        isx = (ix + (code % 3) - 1);
+        isy = (iy + (code / 3) - 1);
+
+        if (isx < 0 || isx >= sX || isy < 0 || isy >= sY)
+          continue;
+
+        cellB = cells.data[sX * isy + isx];
+        sizeB = cells.n[sX * isy + isx];
+        if (sizeB == 0)
+          continue;
+
+        if (code != 1 + 3)
+          for (itA = 0; itA != sizeA; ++itA)
+            for (itB = 0; itB != sizeB; ++itB, all++)
+              counter += (int)_add_collision(cellA[itA], cellB[itB]);
+        else {
+          m = sizeA / 2 + 1;
+          for (i = 0; i < m; i++)
+            for (j = i + 1; j < sizeA; j++, all++)
+              counter += (int)_add_collision(cellA[i], cellA[j]);
+        }
+      }
+    }
+
+  for (i = 0; i < n; i++)
+    if (pow(x[i] - nut.x, 2) + pow(y[i] - nut.y, 2) <= pow(radius + nut.r, 2))
+      if (nut_c2p.find(i) == nut_c2p.end()) {
+        nut_c2p[i].ux = 0;
+        nut_c2p[i].uy = 0;
+      }
+}
+
+void _update_collisions() {
+  for (std::map<int, Collision>::iterator it = collisions.begin();
+       it != collisions.end(); ++it) {
+    int a = it->first % n;
+    int b = it->first / n;
+
+    double x1[2] = {x[a], y[a]};
+    double x2[2] = {x[b], y[b]};
+    double r[2] = {x1[0] - x2[0], x1[1] - x2[1]};
+
+    double v1[2] = {vx[a], vy[a]};
+    double v2[2] = {vx[b], vy[b]};
+
+    double f1[2] = {0, 0};
+    double f2[2] = {0, 0};
+
+    collision_compute(it->second.ux, it->second.uy, dt, radius, radius, r, v1,
+                      v2, om[a], om[b], f1, f2, to[a], to[b]);
+
+    ax[a] += f1[0];
+    ay[a] += f1[1];
+
+    ax[b] += f2[0];
+    ay[b] += f2[1];
+  }
+
+  double factor = pow(radius / nut.r, 2);
+  for (std::map<int, Collision>::iterator it = nut_c2p.begin();
+       it != nut_c2p.end(); ++it) {
+    int a = it->first;
+
+    double x1[2] = {x[a], y[a]};
+    double r[2] = {x1[0] - nut.x, x1[1] - nut.y};
+
+    assert(pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) <=
+           pow(radius + nut.r, 2));
+
+    double v1[2] = {vx[a], vy[a]};
+    double v2[2] = {nut.u, nut.v};
+
+    double f1[2] = {0, 0};
+    double f2[2] = {0, 0};
+
+    collision_compute(it->second.ux, it->second.uy, dt, nut.r, radius, r, v1,
+                      v2, om[a], nut.omega, f1, f2, to[a], nut.domegadt);
+
+    assert(!isnan(f1[0]));
+    assert(!isnan(f1[1]));
+
+    assert(!isnan(f2[0]));
+    assert(!isnan(f2[1]));
+
+    ax[a] += f1[0];
+    ay[a] += f1[1];
+
+    nut.ax += factor * f2[0];
+    nut.ay += factor * f2[1];
+  }
+}
+
+void _add_bcollision(int a) {
+  for (int p = 0; p < 4; p++) {
+    double d = box_distance_to_plane(x[a], y[a], p);
+
+    if (fabs(d) <= radius) {
+      int collision_id = a + n * p;
+
+      if (boundary_collisions.find(collision_id) == boundary_collisions.end()) {
+        boundary_collisions[collision_id].ux = 0;
+        boundary_collisions[collision_id].uy = 0;
+      }
+    }
+  }
+}
+
+// detect and add new particle-boundary collisions to the particle-boundary
+// collision container
+void _add_new_bcollisions() {
+  for (int i = 0; i < n; i++)
+    _add_bcollision(i);
+
+  for (int p = 0; p < 4; p++) {
+    double d = box_distance_to_plane(nut.x, nut.y, p);
+
+    if (fabs(d) <= nut.r) {
+      int collision_id = p;
+
+      if (nut_c2b.find(collision_id) == nut_c2b.end()) {
+        nut_c2b[collision_id].ux = 0;
+        nut_c2b[collision_id].uy = 0;
+      }
+    }
+  }
+}
+
+void _remove_old_bcollisions() {
+  int *rem;
+  int nrem;
+  int crem;
+  int i;
+  int a;
+  int p;
+  double d;
+  nrem = 0;
+  crem = 0;
+  rem = NULL;
+  for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
+       it != boundary_collisions.end(); ++it) {
+    a = it->first % n;
+    p = it->first / n;
+    d = box_distance_to_plane(x[a], y[a], p);
+    if (fabs(d) > radius) {
+      if (nrem >= crem) {
+        crem = 2 * crem + 1;
+        if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+          fprintf(stderr, "realloc failed\n");
+          exit(1);
+        }
+      }
+      rem[nrem++] = it->first;
+    }
+  }
+  for (i = 0; i < nrem; i++)
+    boundary_collisions.erase(rem[i]);
+  nrem = 0;
+  for (p = 0; p < 4; p++) {
+    d = box_distance_to_plane(nut.x, nut.y, p);
+    if (fabs(d) > nut.r) {
+      if (nrem >= crem) {
+        crem = 2 * crem + 1;
+        if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+          fprintf(stderr, "realloc failed\n");
+          exit(1);
+        }
+      }
+      rem[nrem++] = p;
+    }
+  }
+  for (i = 0; i < nrem; i++)
+    nut_c2b.erase(rem[i]);
+}
+
+// perform 1 step for all particle-boundary collisions
+void _update_bcollision(int p, double radius, double x, double y, double u,
+                        double v, double omega, Collision &collision,
+                        double &fx, double &fy, double &domegadt) {
+  // 1. create a mirrored particle at the other side of the boundary (ghost
+  // particle)
+  // 2. solve for the collision
+  // 3. store the force&torque felt by the particle, discard the ghost infos
+
+  double d = dmin(-1e-5, box_distance_to_plane(x, y, p));
+  double x1[2] = {x, y};
+  double v1[2] = {u, v};
+
+  // 1.
+  double ghost[2] = {x1[0] + (-2 * d - 1e-2) * box.planes[p][0],
+                     x1[1] + (-2 * d - 1e-2) * box.planes[p][1]};
+  double v1DOTn = v1[0] * box.planes[p][0] + v1[1] * box.planes[p][1];
+
+  double vbox[2] = {0, 0};
+  vbox[0] = -box.angular_speed * ghost[1] -
+            box.tinfo.r1 * box.tinfo.a * sin(box.tinfo.a * box.t);
+  vbox[1] = +box.angular_speed * ghost[0] +
+            box.tinfo.r2 * box.tinfo.a * sin(box.tinfo.a * box.t);
+  double vghost[2] = {vbox[0] - 2 * v1DOTn * box.planes[p][0],
+                      vbox[1] - 2 * v1DOTn * box.planes[p][1]};
+
+  double ghost_omega = -omega;
+
+  double r[2] = {x1[0] - ghost[0], x1[1] - ghost[1]};
+
+  double f1[2] = {0, 0};
+
+  {
+    double f_dummy[2] = {0, 0};
+    double dummy_domegadt = 0;
+
+    // 2.
+    collision_compute(collision.ux, collision.uy, dt, radius, radius, r, v1,
+                      vghost, omega, ghost_omega, f1, f_dummy, domegadt,
+                      dummy_domegadt);
+
+    assert(!isnan(f1[0]));
+    assert(!isnan(f1[1]));
+  }
+
+  // 3.
+  fx += f1[0];
+  fy += f1[1];
+}
+
+void _update_bcollisions() {
+  for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
+       it != boundary_collisions.end(); ++it) {
+    int a = it->first % n;
+    int p = it->first / n;
+
+    _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
+                       ax[a], ay[a], to[a]);
+  }
+  for (std::map<int, Collision>::iterator it = nut_c2b.begin();
+       it != nut_c2b.end(); ++it) {
+    int p = it->first;
+    _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
+                       it->second, nut.ax, nut.ay, nut.domegadt);
+  }
+}
 
 GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   FILE *pFile;
@@ -690,11 +649,44 @@ static void loop() {
 
   double sum = 0;
   int nsample = 0;
+  double hx = 4. / sX;
+  double hy = 4. / sY;
+  int k;
+  int i;
+  int idx;
+  int idy;
+
   for (int step = 0; time < final_time; step++) {
     for (int i = 0; i < n; i++)
       ay[i] -= 1;
 
-    gfcp.update();
+    _remove_old_collisions();
+    memset(cells.n, 0, sizeof cells.n);
+    for (i = 0; i < n; i++) {
+      idx = imax(0, imin(sX - 1, (int)floor((x[i] + 2) / hx)));
+      idy = imax(0, imin(sY - 1, (int)floor((y[i] + 2) / hy)));
+      k = sX * idy + idx;
+      if (cells.n[k] >= cells.cap[k]) {
+        cells.cap[k] = 2 * cells.cap[k] + 1;
+        if ((cells.data[k] = (int *)realloc(
+                 cells.data[k], cells.cap[k] * sizeof *cells.data[k])) ==
+            NULL) {
+          fprintf(stderr, "realloc failed\n");
+          exit(1);
+        }
+      }
+      cells.data[k][cells.n[k]++] = i;
+    }
+    _add_new_collisions();
+    _update_collisions();
+
+    _remove_old_bcollisions();
+    _add_new_bcollisions();
+    _update_bcollisions();
+
+    box_update();
+    nut_update();
+
     for (int i = 0; i < n; i++) {
       vx[i] += dt * ax[i];
       vy[i] += dt * ay[i];
