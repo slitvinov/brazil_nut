@@ -22,13 +22,8 @@ static struct {
 } tgaHeader;
 #pragma pack(8)
 enum { sX = 75, sY = 75, n = 600, term = 2 * n - 1 };
-static int domain_size = 2;
-static double rmin = domain_size / 40.0;
-static double cutoff = 2.5 * rmin / pow(2, 1. / 6.);
-static double cutoff2 = cutoff * cutoff;
 static char **argv;
 static int bStoreImages;
-static double dt = 1e-4;
 static const int words = ceil(n * (n - 1) / 2 / 32.);
 static unsigned int table[words];
 static double x[n];
@@ -40,7 +35,13 @@ static double ay[n];
 static double om[n];
 static double to[n];
 static double color[n][3];
+static const int domain_size = 2;
+static const double rmin = domain_size / 40.0;
 static const double radius = 0.02;
+static const double cutoff = 2.5 * rmin / pow(2, 1. / 6.);
+static const double cutoff2 = cutoff * cutoff;
+static const double dt = 1e-4;
+static const double inv_momOFinertia_dt = 1. / (radius * radius) * dt;
 static const double threshold_collision_p2p = 4 * 0.02 * 0.02;
 static std::map<int, double[2]> collisions;
 static std::map<int, double[2]> boundary_collisions;
@@ -338,24 +339,15 @@ void _remove_old_bcollisions() {
     nut_c2b.erase(rem[i]);
 }
 
-// perform 1 step for all particle-boundary collisions
 void _update_bcollision(int p, double radius, double x, double y, double u,
                         double v, double omega, double collision[2], double *fx,
                         double *fy, double *domegadt) {
-  // 1. create a mirrored particle at the other side of the boundary (ghost
-  // particle)
-  // 2. solve for the collision
-  // 3. store the force&torque felt by the particle, discard the ghost infos
-
   double d = dmin(-1e-5, box_distance_to_plane(x, y, p));
   double x1[2] = {x, y};
   double v1[2] = {u, v};
-
-  // 1.
   double ghost[2] = {x1[0] + (-2 * d - 1e-2) * box.planes[p][0],
                      x1[1] + (-2 * d - 1e-2) * box.planes[p][1]};
   double v1DOTn = v1[0] * box.planes[p][0] + v1[1] * box.planes[p][1];
-
   double vbox[2] = {0, 0};
   vbox[0] = -box.angular_speed * ghost[1] -
             box.tinfo.r1 * box.tinfo.a * sin(box.tinfo.a * box.t);
@@ -363,24 +355,14 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
             box.tinfo.r2 * box.tinfo.a * sin(box.tinfo.a * box.t);
   double vghost[2] = {vbox[0] - 2 * v1DOTn * box.planes[p][0],
                       vbox[1] - 2 * v1DOTn * box.planes[p][1]};
-
   double ghost_omega = -omega;
-
   double r[2] = {x1[0] - ghost[0], x1[1] - ghost[1]};
-
   double f1[2] = {0, 0};
-
-  {
-    double f_dummy[2] = {0, 0};
-    double dummy_domegadt = 0;
-
-    // 2.
-    collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
-                      vghost, omega, ghost_omega, f1, f_dummy, domegadt,
-                      &dummy_domegadt);
-  }
-
-  // 3.
+  double f_dummy[2] = {0, 0};
+  double dummy_domegadt = 0;
+  collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
+                    vghost, omega, ghost_omega, f1, f_dummy, domegadt,
+                    &dummy_domegadt);
   *fx += f1[0];
   *fy += f1[1];
 }
@@ -649,19 +631,14 @@ static void loop() {
     }
     memset(ax, 0, sizeof ax);
     memset(ay, 0, sizeof ay);
-    double radius = 0.02;
-    double inv_momOFinertia = 1. / (radius * radius);
-    double factor = dt * inv_momOFinertia;
     for (int i = 0; i < n; i++) {
-      om[i] += factor * to[i];
+      om[i] += to[i] * inv_momOFinertia_dt;
       to[i] = 0;
     }
     for (int i = 0; i < n; i++) {
       x[i] += dt * vx[i];
       y[i] += dt * vy[i];
     }
-
-    // if we are about to end, start measure the nuts y-position
     sum = 0;
     if (time > 0.95 * final_time) {
       sum += box_distance_to_plane(nut.x, nut.y, 1);
@@ -690,27 +667,19 @@ static void loop() {
 
       for (int i = 0; i < n; i++)
         paintSphere(x[i], y[i], color[i][0], color[i][1], color[i][2], 0.02);
-
-      // OPEN GL STUFF
       glPopAttrib();
       glutSwapBuffers();
-
-      // write to file
       if (bStoreImages) {
         char frame_name[300];
         sprintf(frame_name, "%05d.tga", iframe++);
         gltWriteTGA(frame_name, 0, 0);
       }
-
       if (bStoreImages)
         printf("T=%2.2f\n", time);
     }
-
     time += dt;
   }
-
   printf("%e\n", sum / nsample);
-
   exit(0);
 }
 
