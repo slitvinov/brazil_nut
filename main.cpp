@@ -543,8 +543,6 @@ static void loop() {
   double h;
   double hx = 4. / sX;
   double hy = 4. / sY;
-  double ix;
-  double iy;
   double r1_over_r2;
   double sum;
   double time;
@@ -593,10 +591,8 @@ static void loop() {
   for (i = 0; i < n; i++) {
     h = 0.04;
     D = 0.8 / h;
-    ix = i % D;
-    iy = i / D;
-    x[i] = -0.4 + (ix + 0.5) * h;
-    y[i] = -0.5 + (iy + 0.5) * h;
+    x[i] = -0.4 + (i % D + 0.5) * h;
+    y[i] = -0.5 + (i / D + 0.5) * h;
   }
   for (i = 0; i < n; i++)
     if (x[i] > 0) {
