@@ -631,19 +631,18 @@ static void loop() {
 
     _remove_old_bcollisions();
     _add_new_bcollisions();
-  for (it = boundary_collisions.begin();
-       it != boundary_collisions.end(); ++it) {
-    a = it->first % n;
-    p = it->first / n;
-    _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
-                       &ax[a], &ay[a], &to[a]);
-  }
-  for (it = nut_c2b.begin();
-       it != nut_c2b.end(); ++it) {
-    p = it->first;
-    _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
-                       it->second, &nut.ax, &nut.ay, &nut.domegadt);
-  }
+    for (it = boundary_collisions.begin(); it != boundary_collisions.end();
+         ++it) {
+      a = it->first % n;
+      p = it->first / n;
+      _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
+                         &ax[a], &ay[a], &to[a]);
+    }
+    for (it = nut_c2b.begin(); it != nut_c2b.end(); ++it) {
+      p = it->first;
+      _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
+                         it->second, &nut.ax, &nut.ay, &nut.domegadt);
+    }
 
     box_update();
     nut_update();
