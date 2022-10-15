@@ -210,69 +210,19 @@ static void table_set(int x, int y) {
   table[bit_id >> 5] |= (1 << (bit_id & 0x1f));
 }
 
-bool _add_collision(int a, int b) {
+int _add_collision(int a, int b) {
   if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
     if (!table_get(a, b)) {
       int minab = imin(a, b);
       collisions[minab + n * (a + b - minab)].ux = 0;
       collisions[minab + n * (a + b - minab)].uy = 0;
       table_set(a, b);
-
-      return true;
+      return 1;
     }
-
-  return false;
+  return 0;
 }
 
-void _remove_old_collisions() {
-  int *rem;
-  int nrem;
-  int crem;
-  int i;
-  int a;
-  int b = 0;
-
-  nrem = 0;
-  crem = 0;
-  rem = NULL;
-  for (std::map<int, Collision>::iterator it = collisions.begin();
-       it != collisions.end(); ++it) {
-    a = it->first % n;
-    b = it->first / n;
-    if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) > threshold_collision_p2p) {
-      if (nrem >= crem) {
-        crem = 2 * crem + 1;
-        if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
-          fprintf(stderr, "realloc failed\n");
-          exit(1);
-        }
-      }
-      rem[nrem++] = it->first;
-      table_clear(a, b);
-    }
-  }
-  for (i = 0; i < nrem; i++)
-    collisions.erase(rem[i]);
-  nrem = 0;
-  for (std::map<int, Collision>::iterator it = nut_c2p.begin();
-       it != nut_c2p.end(); ++it) {
-    a = it->first;
-    if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) > pow(radius + nut.r, 2)) {
-      if (nrem >= crem) {
-        crem = 2 * crem + 1;
-        if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
-          fprintf(stderr, "realloc failed\n");
-          exit(1);
-        }
-      }
-      rem[nrem++] = it->first;
-      table_clear(a, b);
-    }
-  }
-  for (i = 0; i < nrem; i++)
-    nut_c2p.erase(rem[i]);
-  free(rem);
-}
+void _remove_old_collisions() {}
 
 void _add_new_collisions() {
   int all;
@@ -593,9 +543,32 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
 }
 
 static void loop() {
-  double r1_over_r2;
   double a1;
   double a2;
+  double final_time = 50;
+  double h;
+  double hx = 4. / sX;
+  double hy = 4. / sY;
+  double ix;
+  double iy;
+  double r1_over_r2;
+  double sum = 0;
+  double time = 0;
+  int a;
+  int b = 0;
+  int crem;
+  int D;
+  int i;
+  int idx;
+  int idy;
+  int iframe = 0;
+  int k;
+  int nrem;
+  int nsample = 0;
+  int *rem;
+  int step;
+  int steps_per_frame = 4 * 200;
+
   argv++;
   r1_over_r2 = atof(*argv++);
   a1 = atof(*argv++);
@@ -623,15 +596,15 @@ static void loop() {
   nut.domegadt = 0;
   bStoreImages = *argv && strcmp("saveimages", *argv) == 0;
 
-  for (int i = 0; i < n; i++) {
-    double h = 0.04;
-    int D = 0.8 / h;
-    double ix = i % D;
-    double iy = i / D;
+  for (i = 0; i < n; i++) {
+    h = 0.04;
+    D = 0.8 / h;
+    ix = i % D;
+    iy = i / D;
     x[i] = -0.4 + (ix + 0.5) * h;
     y[i] = -0.5 + (iy + 0.5) * h;
   }
-  for (int i = 0; i < n; i++)
+  for (i = 0; i < n; i++)
     if (x[i] > 0) {
       color[i][0] = 210. / 256;
       color[i][1] = 170. / 256;
@@ -641,26 +614,52 @@ static void loop() {
       color[i][1] = 61. / 256;
       color[i][2] = 0. / 256;
     }
-  int steps_per_frame = 4 * 200;
-  double final_time = 50;
 
-  double time = 0;
-  int iframe = 0;
-
-  double sum = 0;
-  int nsample = 0;
-  double hx = 4. / sX;
-  double hy = 4. / sY;
-  int k;
-  int i;
-  int idx;
-  int idy;
-
-  for (int step = 0; time < final_time; step++) {
-    for (int i = 0; i < n; i++)
+  for (step = 0; time < final_time; step++) {
+    for (i = 0; i < n; i++)
       ay[i] -= 1;
 
-    _remove_old_collisions();
+    nrem = 0;
+    crem = 0;
+    rem = NULL;
+    for (std::map<int, Collision>::iterator it = collisions.begin();
+         it != collisions.end(); ++it) {
+      a = it->first % n;
+      b = it->first / n;
+      if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) > threshold_collision_p2p) {
+        if (nrem >= crem) {
+          crem = 2 * crem + 1;
+          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+            fprintf(stderr, "realloc failed\n");
+            exit(1);
+          }
+        }
+        rem[nrem++] = it->first;
+        table_clear(a, b);
+      }
+    }
+    for (i = 0; i < nrem; i++)
+      collisions.erase(rem[i]);
+    nrem = 0;
+    for (std::map<int, Collision>::iterator it = nut_c2p.begin();
+         it != nut_c2p.end(); ++it) {
+      a = it->first;
+      if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) >
+          pow(radius + nut.r, 2)) {
+        if (nrem >= crem) {
+          crem = 2 * crem + 1;
+          if ((rem = (int *)realloc(rem, crem * sizeof *rem)) == NULL) {
+            fprintf(stderr, "realloc failed\n");
+            exit(1);
+          }
+        }
+        rem[nrem++] = it->first;
+        table_clear(a, b);
+      }
+    }
+    for (i = 0; i < nrem; i++)
+      nut_c2p.erase(rem[i]);
+    free(rem);
     memset(cells.n, 0, sizeof cells.n);
     for (i = 0; i < n; i++) {
       idx = imax(0, imin(sX - 1, (int)floor((x[i] + 2) / hx)));
