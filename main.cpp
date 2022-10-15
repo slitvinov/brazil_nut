@@ -1,5 +1,4 @@
 #include <GL/glut.h>
-#include <assert.h>
 #include <map>
 #include <math.h>
 #include <stdio.h>
@@ -251,10 +250,6 @@ void _update_collisions() {
 
     double x1[2] = {x[a], y[a]};
     double r[2] = {x1[0] - nut.x, x1[1] - nut.y};
-
-    assert(pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) <=
-           pow(radius + nut.r, 2));
-
     double v1[2] = {vx[a], vy[a]};
     double v2[2] = {nut.u, nut.v};
 
@@ -263,16 +258,8 @@ void _update_collisions() {
 
     collision_compute(it->second[0], it->second[0], dt, nut.r, radius, r, v1,
                       v2, om[a], nut.omega, f1, f2, to[a], nut.domegadt);
-
-    assert(!isnan(f1[0]));
-    assert(!isnan(f1[1]));
-
-    assert(!isnan(f2[0]));
-    assert(!isnan(f2[1]));
-
     ax[a] += f1[0];
     ay[a] += f1[1];
-
     nut.ax += factor * f2[0];
     nut.ay += factor * f2[1];
   }
@@ -395,9 +382,6 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
     collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
                       vghost, omega, ghost_omega, f1, f_dummy, domegadt,
                       dummy_domegadt);
-
-    assert(!isnan(f1[0]));
-    assert(!isnan(f1[1]));
   }
 
   // 3.
@@ -739,7 +723,6 @@ static void loop() {
 }
 
 int main(int argc, char **argv0) {
-  assert(argc >= 4);
   argv = argv0;
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
