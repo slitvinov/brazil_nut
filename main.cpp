@@ -46,12 +46,36 @@ static std::map<int, double[2]> collisions;
 static std::map<int, double[2]> boundary_collisions;
 static std::map<int, double[2]> nut_c2p;
 static std::map<int, double[2]> nut_c2b;
+static struct {
+  int *data[sX * sY];
+  int n[sX * sY];
+  int cap[sX * sY];
+} cells;
+static struct {
+  double r;
+  double x, y;
+  double u, v;
+  double ax, ay;
+  double omega, domegadt;
+} nut;
+static struct Box {
+  struct {
+    double a, a_desired, r1, r2;
+  } tinfo;
+  double half_width;
+  double aspect_ratio;
+  double a2;
+  double planes[4][3];
+  double center[2];
+  double angle;
+  double t;
+  double angular_speed;
+} box;
 
 static int imin(int x, int y) { return x < y ? x : y; }
 static int imax(int x, int y) { return x > y ? x : y; }
 static double dmin(double x, double y) { return x < y ? x : y; }
 static double dmax(double x, double y) { return x > y ? x : y; }
-
 static void paintSphere(double x, double y, GLfloat r, GLfloat g, GLfloat b,
                         GLdouble radius) {
   glPushAttrib(GL_ENABLE_BIT);
@@ -65,20 +89,6 @@ static void paintSphere(double x, double y, GLfloat r, GLfloat g, GLfloat b,
   glPopMatrix();
   glPopAttrib();
 };
-
-static struct {
-  int *data[sX * sY];
-  int n[sX * sY];
-  int cap[sX * sY];
-} cells;
-
-static struct {
-  double r;
-  double x, y;
-  double u, v;
-  double ax, ay;
-  double omega, domegadt;
-} nut;
 
 static void nut_update(void) {
   nut.ay += -1.0;
@@ -94,20 +104,6 @@ static void nut_update(void) {
   nut.ay = 0;
   nut.domegadt = 0;
 }
-
-static struct Box {
-  struct {
-    double a, a_desired, r1, r2;
-  } tinfo;
-  double half_width;
-  double aspect_ratio;
-  double a2;
-  double planes[4][3];
-  double center[2];
-  double angle;
-  double t;
-  double angular_speed;
-} box;
 
 static double box_distance_to_plane(double x, double y, int p) {
   return box.planes[p][0] * x + box.planes[p][1] * y + box.planes[p][2];
