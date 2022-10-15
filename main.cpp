@@ -148,7 +148,7 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
                               double radius2, double r[2], double v1[2],
                               double v2[2], double omega1, double omega2,
                               double force1[2], double force2[2],
-                              double &torque1, double &torque2) {
+                              double *torque1, double *torque2) {
   double kn = 1e5;
   double kt = 2. / 70 * kn;
   double gn = 5e1;
@@ -181,8 +181,8 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
   force1[1] += f[1];
   force2[0] -= f[0];
   force2[1] -= f[1];
-  torque1 -= -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
-  torque2 += -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
+  *torque1 -= -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
+  *torque2 += -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
 };
 
 static int table_id(int x, int y) {
@@ -234,7 +234,7 @@ void _update_collisions() {
     double f2[2] = {0, 0};
 
     collision_compute(it->second[0], it->second[0], dt, radius, radius, r, v1,
-                      v2, om[a], om[b], f1, f2, to[a], to[b]);
+                      v2, om[a], om[b], f1, f2, &to[a], &to[b]);
 
     ax[a] += f1[0];
     ay[a] += f1[1];
@@ -257,7 +257,7 @@ void _update_collisions() {
     double f2[2] = {0, 0};
 
     collision_compute(it->second[0], it->second[0], dt, nut.r, radius, r, v1,
-                      v2, om[a], nut.omega, f1, f2, to[a], nut.domegadt);
+                      v2, om[a], nut.omega, f1, f2, &to[a], &nut.domegadt);
     ax[a] += f1[0];
     ay[a] += f1[1];
     nut.ax += factor * f2[0];
@@ -274,7 +274,7 @@ void _add_new_bcollisions() {
     for (p = 0; p < 4; p++) {
       d = box_distance_to_plane(x[i], y[i], p);
       if (fabs(d) <= radius) {
-        collision_id = a + n * p;
+        collision_id = i + n * p;
         if (boundary_collisions.find(collision_id) ==
             boundary_collisions.end()) {
           boundary_collisions[collision_id][0] = 0;
@@ -344,8 +344,8 @@ void _remove_old_bcollisions() {
 
 // perform 1 step for all particle-boundary collisions
 void _update_bcollision(int p, double radius, double x, double y, double u,
-                        double v, double omega, double collision[2], double &fx,
-                        double &fy, double &domegadt) {
+                        double v, double omega, double collision[2], double *fx,
+                        double *fy, double *domegadt) {
   // 1. create a mirrored particle at the other side of the boundary (ghost
   // particle)
   // 2. solve for the collision
@@ -381,12 +381,12 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
     // 2.
     collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
                       vghost, omega, ghost_omega, f1, f_dummy, domegadt,
-                      dummy_domegadt);
+                      &dummy_domegadt);
   }
 
   // 3.
-  fx += f1[0];
-  fy += f1[1];
+  *fx += f1[0];
+  *fy += f1[1];
 }
 
 void _update_bcollisions() {
@@ -396,13 +396,13 @@ void _update_bcollisions() {
     int p = it->first / n;
 
     _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
-                       ax[a], ay[a], to[a]);
+                       &ax[a], &ay[a], &to[a]);
   }
   for (std::map<int, double[2]>::iterator it = nut_c2b.begin();
        it != nut_c2b.end(); ++it) {
     int p = it->first;
     _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
-                       it->second, nut.ax, nut.ay, nut.domegadt);
+                       it->second, &nut.ax, &nut.ay, &nut.domegadt);
   }
 }
 
