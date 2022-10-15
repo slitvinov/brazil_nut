@@ -222,8 +222,6 @@ int _add_collision(int a, int b) {
   return 0;
 }
 
-void _remove_old_collisions() {}
-
 void _add_new_collisions() {
   int all;
   int *cellA;
@@ -552,10 +550,10 @@ static void loop() {
   double ix;
   double iy;
   double r1_over_r2;
-  double sum = 0;
-  double time = 0;
+  double sum;
+  double time;
   int a;
-  int b = 0;
+  int b;
   int crem;
   int D;
   int i;
@@ -615,6 +613,7 @@ static void loop() {
       color[i][2] = 0. / 256;
     }
 
+  time = 0;
   for (step = 0; time < final_time; step++) {
     for (i = 0; i < n; i++)
       ay[i] -= 1;
@@ -622,6 +621,7 @@ static void loop() {
     nrem = 0;
     crem = 0;
     rem = NULL;
+    b = 0;
     for (std::map<int, Collision>::iterator it = collisions.begin();
          it != collisions.end(); ++it) {
       a = it->first % n;
@@ -705,6 +705,7 @@ static void loop() {
     }
 
     // if we are about to end, start measure the nuts y-position
+    sum = 0;
     if (time > 0.95 * final_time) {
       sum += box_distance_to_plane(nut.x, nut.y, 1);
       nsample++;
