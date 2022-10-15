@@ -278,33 +278,28 @@ void _update_collisions() {
   }
 }
 
-void _add_bcollision(int a) {
-  for (int p = 0; p < 4; p++) {
-    double d = box_distance_to_plane(x[a], y[a], p);
-
-    if (fabs(d) <= radius) {
-      int collision_id = a + n * p;
-
-      if (boundary_collisions.find(collision_id) == boundary_collisions.end()) {
-        boundary_collisions[collision_id][0] = 0;
-        boundary_collisions[collision_id][0] = 0;
+void _add_new_bcollisions() {
+  double d;
+  int collision_id;
+  int p;
+  int i;
+  for (i = 0; i < n; i++) {
+    for (p = 0; p < 4; p++) {
+      d = box_distance_to_plane(x[i], y[i], p);
+      if (fabs(d) <= radius) {
+        collision_id = a + n * p;
+        if (boundary_collisions.find(collision_id) ==
+            boundary_collisions.end()) {
+          boundary_collisions[collision_id][0] = 0;
+          boundary_collisions[collision_id][0] = 0;
+        }
       }
     }
   }
-}
-
-// detect and add new particle-boundary collisions to the particle-boundary
-// collision container
-void _add_new_bcollisions() {
-  for (int i = 0; i < n; i++)
-    _add_bcollision(i);
-
-  for (int p = 0; p < 4; p++) {
-    double d = box_distance_to_plane(nut.x, nut.y, p);
-
+  for (p = 0; p < 4; p++) {
+    d = box_distance_to_plane(nut.x, nut.y, p);
     if (fabs(d) <= nut.r) {
-      int collision_id = p;
-
+      collision_id = p;
       if (nut_c2b.find(collision_id) == nut_c2b.end()) {
         nut_c2b[collision_id][0] = 0;
         nut_c2b[collision_id][0] = 0;
