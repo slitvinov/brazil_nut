@@ -218,66 +218,6 @@ int _add_collision(int a, int b) {
   return 0;
 }
 
-void _add_new_collisions() {
-  int all;
-  int *cellA;
-  int *cellB;
-  int code;
-  int counter;
-  int i;
-  int isx;
-  int isy;
-  int itA;
-  int itB;
-  int ix;
-  int iy;
-  int j;
-  int m;
-  int sizeA;
-  int sizeB;
-
-  all = 0;
-  counter = 0;
-  for (iy = 0; iy < sX; iy++)
-    for (ix = 0; ix < sY; ix++) {
-      cellA = cells.data[sX * iy + ix];
-      sizeA = cells.n[sX * iy + ix];
-      if (sizeA == 0)
-        continue;
-
-      for (code = 0; code < 9; code++) {
-        isx = (ix + (code % 3) - 1);
-        isy = (iy + (code / 3) - 1);
-
-        if (isx < 0 || isx >= sX || isy < 0 || isy >= sY)
-          continue;
-
-        cellB = cells.data[sX * isy + isx];
-        sizeB = cells.n[sX * isy + isx];
-        if (sizeB == 0)
-          continue;
-
-        if (code != 1 + 3)
-          for (itA = 0; itA != sizeA; ++itA)
-            for (itB = 0; itB != sizeB; ++itB, all++)
-              counter += (int)_add_collision(cellA[itA], cellB[itB]);
-        else {
-          m = sizeA / 2 + 1;
-          for (i = 0; i < m; i++)
-            for (j = i + 1; j < sizeA; j++, all++)
-              counter += (int)_add_collision(cellA[i], cellA[j]);
-        }
-      }
-    }
-
-  for (i = 0; i < n; i++)
-    if (pow(x[i] - nut.x, 2) + pow(y[i] - nut.y, 2) <= pow(radius + nut.r, 2))
-      if (nut_c2p.find(i) == nut_c2p.end()) {
-        nut_c2p[i][0] = 0;
-        nut_c2p[i][1] = 0;
-      }
-}
-
 void _update_collisions() {
   for (std::map<int, double[2]>::iterator it = collisions.begin();
        it != collisions.end(); ++it) {
@@ -547,17 +487,32 @@ static void loop() {
   double sum;
   double time;
   int a;
+  int all;
   int b;
+  int *cellA;
+  int *cellB;
+  int code;
+  int counter;
   int crem;
   int D;
   int i;
   int idx;
   int idy;
   int iframe = 0;
+  int isx;
+  int isy;
+  int itA;
+  int itB;
+  int ix;
+  int iy;
+  int j;
   int k;
+  int m;
   int nrem;
   int nsample = 0;
   int *rem;
+  int sizeA;
+  int sizeB;
   int step;
   int steps_per_frame = 4 * 200;
 
@@ -668,7 +623,46 @@ static void loop() {
       }
       cells.data[k][cells.n[k]++] = i;
     }
-    _add_new_collisions();
+    all = 0;
+    counter = 0;
+    for (iy = 0; iy < sX; iy++)
+      for (ix = 0; ix < sY; ix++) {
+        cellA = cells.data[sX * iy + ix];
+        sizeA = cells.n[sX * iy + ix];
+        if (sizeA == 0)
+          continue;
+
+        for (code = 0; code < 9; code++) {
+          isx = (ix + (code % 3) - 1);
+          isy = (iy + (code / 3) - 1);
+
+          if (isx < 0 || isx >= sX || isy < 0 || isy >= sY)
+            continue;
+
+          cellB = cells.data[sX * isy + isx];
+          sizeB = cells.n[sX * isy + isx];
+          if (sizeB == 0)
+            continue;
+
+          if (code != 1 + 3)
+            for (itA = 0; itA != sizeA; ++itA)
+              for (itB = 0; itB != sizeB; ++itB, all++)
+                counter += (int)_add_collision(cellA[itA], cellB[itB]);
+          else {
+            m = sizeA / 2 + 1;
+            for (i = 0; i < m; i++)
+              for (j = i + 1; j < sizeA; j++, all++)
+                counter += (int)_add_collision(cellA[i], cellA[j]);
+          }
+        }
+      }
+
+    for (i = 0; i < n; i++)
+      if (pow(x[i] - nut.x, 2) + pow(y[i] - nut.y, 2) <= pow(radius + nut.r, 2))
+        if (nut_c2p.find(i) == nut_c2p.end()) {
+          nut_c2p[i][0] = 0;
+          nut_c2p[i][1] = 0;
+        }
     _update_collisions();
 
     _remove_old_bcollisions();
