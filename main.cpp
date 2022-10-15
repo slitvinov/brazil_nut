@@ -43,14 +43,10 @@ static double to[n];
 static double color[n][3];
 static const double radius = 0.02;
 static const double threshold_collision_p2p = 4 * 0.02 * 0.02;
-struct Collision {
-  double ux;
-  double uy;
-};
-static std::map<int, Collision> collisions;
-static std::map<int, Collision> boundary_collisions;
-static std::map<int, Collision> nut_c2p;
-static std::map<int, Collision> nut_c2b;
+static std::map<int, double[2]> collisions;
+static std::map<int, double[2]> boundary_collisions;
+static std::map<int, double[2]> nut_c2p;
+static std::map<int, double[2]> nut_c2b;
 
 static int imin(int x, int y) { return x < y ? x : y; }
 static int imax(int x, int y) { return x > y ? x : y; }
@@ -214,8 +210,8 @@ int _add_collision(int a, int b) {
   if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
     if (!table_get(a, b)) {
       int minab = imin(a, b);
-      collisions[minab + n * (a + b - minab)].ux = 0;
-      collisions[minab + n * (a + b - minab)].uy = 0;
+      collisions[minab + n * (a + b - minab)][0] = 0;
+      collisions[minab + n * (a + b - minab)][1] = 0;
       table_set(a, b);
       return 1;
     }
@@ -277,13 +273,13 @@ void _add_new_collisions() {
   for (i = 0; i < n; i++)
     if (pow(x[i] - nut.x, 2) + pow(y[i] - nut.y, 2) <= pow(radius + nut.r, 2))
       if (nut_c2p.find(i) == nut_c2p.end()) {
-        nut_c2p[i].ux = 0;
-        nut_c2p[i].uy = 0;
+        nut_c2p[i][0] = 0;
+        nut_c2p[i][1] = 0;
       }
 }
 
 void _update_collisions() {
-  for (std::map<int, Collision>::iterator it = collisions.begin();
+  for (std::map<int, double[2]>::iterator it = collisions.begin();
        it != collisions.end(); ++it) {
     int a = it->first % n;
     int b = it->first / n;
@@ -298,7 +294,7 @@ void _update_collisions() {
     double f1[2] = {0, 0};
     double f2[2] = {0, 0};
 
-    collision_compute(it->second.ux, it->second.uy, dt, radius, radius, r, v1,
+    collision_compute(it->second[0], it->second[0], dt, radius, radius, r, v1,
                       v2, om[a], om[b], f1, f2, to[a], to[b]);
 
     ax[a] += f1[0];
@@ -309,7 +305,7 @@ void _update_collisions() {
   }
 
   double factor = pow(radius / nut.r, 2);
-  for (std::map<int, Collision>::iterator it = nut_c2p.begin();
+  for (std::map<int, double[2]>::iterator it = nut_c2p.begin();
        it != nut_c2p.end(); ++it) {
     int a = it->first;
 
@@ -325,7 +321,7 @@ void _update_collisions() {
     double f1[2] = {0, 0};
     double f2[2] = {0, 0};
 
-    collision_compute(it->second.ux, it->second.uy, dt, nut.r, radius, r, v1,
+    collision_compute(it->second[0], it->second[0], dt, nut.r, radius, r, v1,
                       v2, om[a], nut.omega, f1, f2, to[a], nut.domegadt);
 
     assert(!isnan(f1[0]));
@@ -350,8 +346,8 @@ void _add_bcollision(int a) {
       int collision_id = a + n * p;
 
       if (boundary_collisions.find(collision_id) == boundary_collisions.end()) {
-        boundary_collisions[collision_id].ux = 0;
-        boundary_collisions[collision_id].uy = 0;
+        boundary_collisions[collision_id][0] = 0;
+        boundary_collisions[collision_id][0] = 0;
       }
     }
   }
@@ -370,8 +366,8 @@ void _add_new_bcollisions() {
       int collision_id = p;
 
       if (nut_c2b.find(collision_id) == nut_c2b.end()) {
-        nut_c2b[collision_id].ux = 0;
-        nut_c2b[collision_id].uy = 0;
+        nut_c2b[collision_id][0] = 0;
+        nut_c2b[collision_id][0] = 0;
       }
     }
   }
@@ -388,7 +384,7 @@ void _remove_old_bcollisions() {
   nrem = 0;
   crem = 0;
   rem = NULL;
-  for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
+  for (std::map<int, double[2]>::iterator it = boundary_collisions.begin();
        it != boundary_collisions.end(); ++it) {
     a = it->first % n;
     p = it->first / n;
@@ -426,8 +422,8 @@ void _remove_old_bcollisions() {
 
 // perform 1 step for all particle-boundary collisions
 void _update_bcollision(int p, double radius, double x, double y, double u,
-                        double v, double omega, Collision &collision,
-                        double &fx, double &fy, double &domegadt) {
+                        double v, double omega, double collision[2], double &fx,
+                        double &fy, double &domegadt) {
   // 1. create a mirrored particle at the other side of the boundary (ghost
   // particle)
   // 2. solve for the collision
@@ -461,7 +457,7 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
     double dummy_domegadt = 0;
 
     // 2.
-    collision_compute(collision.ux, collision.uy, dt, radius, radius, r, v1,
+    collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
                       vghost, omega, ghost_omega, f1, f_dummy, domegadt,
                       dummy_domegadt);
 
@@ -475,7 +471,7 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
 }
 
 void _update_bcollisions() {
-  for (std::map<int, Collision>::iterator it = boundary_collisions.begin();
+  for (std::map<int, double[2]>::iterator it = boundary_collisions.begin();
        it != boundary_collisions.end(); ++it) {
     int a = it->first % n;
     int p = it->first / n;
@@ -483,7 +479,7 @@ void _update_bcollisions() {
     _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
                        ax[a], ay[a], to[a]);
   }
-  for (std::map<int, Collision>::iterator it = nut_c2b.begin();
+  for (std::map<int, double[2]>::iterator it = nut_c2b.begin();
        it != nut_c2b.end(); ++it) {
     int p = it->first;
     _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
@@ -622,7 +618,7 @@ static void loop() {
     crem = 0;
     rem = NULL;
     b = 0;
-    for (std::map<int, Collision>::iterator it = collisions.begin();
+    for (std::map<int, double[2]>::iterator it = collisions.begin();
          it != collisions.end(); ++it) {
       a = it->first % n;
       b = it->first / n;
@@ -641,7 +637,7 @@ static void loop() {
     for (i = 0; i < nrem; i++)
       collisions.erase(rem[i]);
     nrem = 0;
-    for (std::map<int, Collision>::iterator it = nut_c2p.begin();
+    for (std::map<int, double[2]>::iterator it = nut_c2p.begin();
          it != nut_c2p.end(); ++it) {
       a = it->first;
       if (pow(x[a] - nut.x, 2) + pow(y[a] - nut.y, 2) >
