@@ -389,23 +389,6 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
   *fy += f1[1];
 }
 
-void _update_bcollisions() {
-  for (std::map<int, double[2]>::iterator it = boundary_collisions.begin();
-       it != boundary_collisions.end(); ++it) {
-    int a = it->first % n;
-    int p = it->first / n;
-
-    _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
-                       &ax[a], &ay[a], &to[a]);
-  }
-  for (std::map<int, double[2]>::iterator it = nut_c2b.begin();
-       it != nut_c2b.end(); ++it) {
-    int p = it->first;
-    _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
-                       it->second, &nut.ax, &nut.ay, &nut.domegadt);
-  }
-}
-
 GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   FILE *pFile;
   unsigned long lImageSize;
@@ -489,11 +472,13 @@ static void loop() {
   int m;
   int nrem;
   int nsample = 0;
+  int p;
   int *rem;
   int sizeA;
   int sizeB;
   int step;
   int steps_per_frame = 4 * 200;
+  std::map<int, double[2]>::iterator it;
 
   argv++;
   r1_over_r2 = atof(*argv++);
@@ -646,7 +631,19 @@ static void loop() {
 
     _remove_old_bcollisions();
     _add_new_bcollisions();
-    _update_bcollisions();
+  for (it = boundary_collisions.begin();
+       it != boundary_collisions.end(); ++it) {
+    a = it->first % n;
+    p = it->first / n;
+    _update_bcollision(p, radius, x[a], y[a], vx[a], vy[a], om[a], it->second,
+                       &ax[a], &ay[a], &to[a]);
+  }
+  for (it = nut_c2b.begin();
+       it != nut_c2b.end(); ++it) {
+    p = it->first;
+    _update_bcollision(p, nut.r, nut.x, nut.y, nut.u, nut.v, nut.omega,
+                       it->second, &nut.ax, &nut.ay, &nut.domegadt);
+  }
 
     box_update();
     nut_update();
