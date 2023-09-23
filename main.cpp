@@ -92,21 +92,6 @@ static void paintSphere(double x, double y, GLfloat r, GLfloat g, GLfloat b,
   glPopAttrib();
 };
 
-static void nut_update(void) {
-  nut.ay += -1.0;
-  nut.u += dt * nut.ax;
-  nut.v += dt * nut.ay;
-
-  nut.x += dt * nut.u;
-  nut.y += dt * nut.v;
-
-  nut.omega += dt * nut.domegadt;
-
-  nut.ax = 0;
-  nut.ay = 0;
-  nut.domegadt = 0;
-}
-
 static double box_distance_to_plane(double x, double y, int p) {
   return box.planes[p][0] * x + box.planes[p][1] * y + box.planes[p][2];
 }
@@ -599,8 +584,15 @@ static void loop() {
     }
 
     box_update();
-    nut_update();
-
+    nut.ay += -1.0;
+    nut.u += dt * nut.ax;
+    nut.v += dt * nut.ay;
+    nut.x += dt * nut.u;
+    nut.y += dt * nut.v;
+    nut.omega += dt * nut.domegadt;
+    nut.ax = 0;
+    nut.ay = 0;
+    nut.domegadt = 0;
     for (int i = 0; i < n; i++) {
       vx[i] += dt * ax[i];
       vy[i] += dt * ay[i];
