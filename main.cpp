@@ -227,22 +227,13 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
   *fy += f1[1];
 }
 
-GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
+GLint gltWrite(char *path) {
   FILE *pFile;
   unsigned long lImageSize;
-  GLbyte *pBits = NULL;
+  GLbyte *pBits;
   GLint iViewport[4];
-  GLint nImageSize[2];
-  int bUseViewport = (nSizeX == 0 && nSizeY == 0);
-  if (bUseViewport) {
-    glGetIntegerv(GL_VIEWPORT, iViewport);
-    nImageSize[0] = iViewport[2];
-    nImageSize[1] = iViewport[3];
-  } else {
-    nImageSize[0] = nSizeX;
-    nImageSize[1] = nSizeY;
-  }
-  lImageSize = nImageSize[0] * nImageSize[1] * 4;
+  glGetIntegerv(GL_VIEWPORT, iViewport);
+  lImageSize = 3 * iViewport[2] * iViewport[3];
   pBits = (GLbyte *)malloc(lImageSize);
   if (pBits == NULL)
     return 0;
@@ -250,26 +241,14 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
   glPixelStorei(GL_PACK_SKIP_ROWS, 0);
   glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
-  glReadPixels(0, 0, nImageSize[0], nImageSize[1], GL_BGRA_EXT,
-               GL_UNSIGNED_BYTE, pBits);
-  tgaHeader.identsize = 0;
-  tgaHeader.colorMapType = 0;
-  tgaHeader.imageType = 2;
-  tgaHeader.colorMapStart = 0;
-  tgaHeader.colorMapLength = 0;
-  tgaHeader.colorMapBits = 0;
-  tgaHeader.xstart = 0;
-  tgaHeader.ystart = 0;
-  tgaHeader.width = nImageSize[0];
-  tgaHeader.height = nImageSize[1];
-  tgaHeader.bits = 32;
-  tgaHeader.descriptor = 8;
-  pFile = fopen(szFileName, "wb");
+  glReadPixels(0, 0, iViewport[2], iViewport[3], GL_RGB, GL_UNSIGNED_BYTE,
+               pBits);
+  pFile = fopen(path, "wb");
   if (pFile == NULL) {
     free(pBits);
     return 0;
   }
-  fwrite(&tgaHeader, sizeof tgaHeader, 1, pFile);
+  fprintf(pFile, "P6\n%d %d\n255\n", iViewport[2], iViewport[3]);
   fwrite(pBits, lImageSize, 1, pFile);
   free(pBits);
   fclose(pFile);
@@ -277,6 +256,7 @@ GLint gltWriteTGA(char *szFileName, int nSizeX, int nSizeY) {
 }
 
 static void loop() {
+  char path[FILENAME_MAX];
   double a1;
   double a2;
   double d;
@@ -287,6 +267,9 @@ static void loop() {
   double r1_over_r2;
   double sum;
   double time;
+  FILE *file;
+  GLbyte *pBits;
+  GLint iViewport[4];
   int a;
   int all;
   int b;
@@ -319,6 +302,7 @@ static void loop() {
   int step;
   int steps_per_frame = 4 * 200;
   std::map<int, double[2]>::iterator it;
+  unsigned long lImageSize;
 
   argv++;
   r1_over_r2 = atof(*argv++);
@@ -638,9 +622,23 @@ static void loop() {
       glPopAttrib();
       glutSwapBuffers();
       if (bStoreImages) {
-        char frame_name[300];
-        sprintf(frame_name, "%05d.tga", iframe++);
-        gltWriteTGA(frame_name, 0, 0);
+        sprintf(path, "%05d.ppm", iframe++);
+        glGetIntegerv(GL_VIEWPORT, iViewport);
+        lImageSize = 3 * iViewport[2] * iViewport[3];
+        pBits = (GLbyte *)malloc(lImageSize);
+        if (pBits == NULL)
+          exit(1);
+        glReadPixels(0, 0, iViewport[2], iViewport[3], GL_RGB, GL_UNSIGNED_BYTE,
+                     pBits);
+        file = fopen(path, "wb");
+        if (file == NULL) {
+          free(pBits);
+          exit(1);
+        }
+        fprintf(file, "P6\n%d %d\n255\n", iViewport[2], iViewport[3]);
+        fwrite(pBits, lImageSize, 1, file);
+        free(pBits);
+        fclose(file);
         printf("T=%2.2f\n", time);
       }
     }
