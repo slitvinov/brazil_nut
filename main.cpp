@@ -649,9 +649,8 @@ static void loop() {
         char frame_name[300];
         sprintf(frame_name, "%05d.tga", iframe++);
         gltWriteTGA(frame_name, 0, 0);
-      }
-      if (bStoreImages)
         printf("T=%2.2f\n", time);
+      }
     }
     time += dt;
   }
