@@ -19,6 +19,8 @@ static double to[n];
 static double color[n][3];
 static const int words = ceil(n * (n - 1) / 2 / 32.);
 static unsigned int table[words];
+static const int xsize = 512;
+static const int ysize = 512;
 static const int domain_size = 2;
 static const double rmin = domain_size / 40.0;
 static const double radius = 0.02;
@@ -211,34 +213,6 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
   *fy += f1[1];
 }
 
-GLint gltWrite(char *path) {
-  FILE *pFile;
-  unsigned long lImageSize;
-  GLbyte *pBits;
-  GLint iViewport[4];
-  glGetIntegerv(GL_VIEWPORT, iViewport);
-  lImageSize = 3 * iViewport[2] * iViewport[3];
-  pBits = (GLbyte *)malloc(lImageSize);
-  if (pBits == NULL)
-    return 0;
-  glPixelStorei(GL_PACK_ALIGNMENT, 1);
-  glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-  glPixelStorei(GL_PACK_SKIP_ROWS, 0);
-  glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
-  glReadPixels(0, 0, iViewport[2], iViewport[3], GL_RGB, GL_UNSIGNED_BYTE,
-               pBits);
-  pFile = fopen(path, "wb");
-  if (pFile == NULL) {
-    free(pBits);
-    return 0;
-  }
-  fprintf(pFile, "P6\n%d %d\n255\n", iViewport[2], iViewport[3]);
-  fwrite(pBits, lImageSize, 1, pFile);
-  free(pBits);
-  fclose(pFile);
-  return 1;
-}
-
 static void loop() {
   char path[FILENAME_MAX];
   double a1;
@@ -253,7 +227,6 @@ static void loop() {
   double time;
   FILE *file;
   GLbyte *pBits;
-  GLint iViewport[4];
   int a;
   int all;
   int b;
@@ -607,19 +580,18 @@ static void loop() {
       glutSwapBuffers();
       if (bStoreImages) {
         sprintf(path, "%05d.ppm", iframe++);
-        glGetIntegerv(GL_VIEWPORT, iViewport);
-        lImageSize = 3 * iViewport[2] * iViewport[3];
+        lImageSize = 3 * xsize * ysize;
         pBits = (GLbyte *)malloc(lImageSize);
         if (pBits == NULL)
           exit(1);
-        glReadPixels(0, 0, iViewport[2], iViewport[3], GL_RGB, GL_UNSIGNED_BYTE,
+        glReadPixels(0, 0, xsize, ysize, GL_RGB, GL_UNSIGNED_BYTE,
                      pBits);
         file = fopen(path, "wb");
         if (file == NULL) {
           free(pBits);
           exit(1);
         }
-        fprintf(file, "P6\n%d %d\n255\n", iViewport[2], iViewport[3]);
+        fprintf(file, "P6\n%d %d\n255\n", xsize, ysize);
         fwrite(pBits, lImageSize, 1, file);
         free(pBits);
         fclose(file);
@@ -632,17 +604,13 @@ static void loop() {
   exit(0);
 }
 
-vint main(int argc, char **argv0) {
+int main(int argc, char **argv0) {
   argv = argv0;
   glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
-  glutInitWindowSize(512, 512);
+  glutInitWindowSize(xsize, ysize);
   glutCreateWindow("Brazil Nut");
   glutIdleFunc(loop);
-  glPointSize(4);
-  glClearColor(0, 0, 0, 0);
   glMatrixMode(GL_PROJECTION);
-  glLoadIdentity();
   glOrtho(-1.5, 1.5, -1.5, 1.5, -1, 1);
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
