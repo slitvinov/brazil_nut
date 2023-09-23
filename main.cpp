@@ -5,22 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#pragma pack(1)
-static struct {
-  GLbyte identsize;
-  GLbyte colorMapType;
-  GLbyte imageType;
-  unsigned short colorMapStart;
-  unsigned short colorMapLength;
-  unsigned char colorMapBits;
-  unsigned short xstart;
-  unsigned short ystart;
-  unsigned short width;
-  unsigned short height;
-  GLbyte bits;
-  GLbyte descriptor;
-} tgaHeader;
-#pragma pack(8)
 enum { sX = 75, sY = 75, n = 600, term = 2 * n - 1 };
 static char **argv;
 static int bStoreImages;
@@ -648,7 +632,7 @@ static void loop() {
   exit(0);
 }
 
-int main(int argc, char **argv0) {
+vint main(int argc, char **argv0) {
   argv = argv0;
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
