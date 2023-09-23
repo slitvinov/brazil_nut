@@ -1,7 +1,0 @@
-trap 'rm -rf /tmp/$$' 1 2 5
-mkdir /tmp/$$
-for i
-do convert -crop 260x430+120+40 +repage -quality 85% $i /tmp/$$/$i.png
-done
-convert /tmp/$$/*.png img/box.gif
-rm -rf /tmp/$$

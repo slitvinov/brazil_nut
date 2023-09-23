@@ -1,0 +1,1 @@
+convert -flip -crop 260x430+120+40 +repage -quality 85%  "$@" img/box.gif
