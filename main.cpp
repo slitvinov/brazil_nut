@@ -345,7 +345,7 @@ static void loop() {
         if ((cells.data[k] = (int *)realloc(
                  cells.data[k], cells.cap[k] * sizeof *cells.data[k])) ==
             NULL) {
-          fprintf(stderr, "realloc failed\n");
+          fprintf(stderr, "main.cpp: error: realloc failed\n");
           exit(1);
         }
       }
@@ -536,7 +536,7 @@ static void loop() {
     if (step % steps_per_frame == 0) {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       glDisable(GL_LIGHTING);
-      glLineWidth(2.);
+      glLineWidth(2);
       glColor3f(1, 1, 1);
       glBegin(GL_LINE_LOOP);
       double p[4][2] = {-1.01, -1.01, +1.01, -1.01, +1.01, +1.01, -1.01, +1.01};
@@ -550,9 +550,7 @@ static void loop() {
         glVertex2f(q[0] + box.center[0], q[1] + box.center[1]);
       }
       glEnd();
-
       paintSphere(nut.x, nut.y, 1.3 * 179. / 256, 1.3 * 89. / 256, 0, nut.r);
-
       for (int i = 0; i < n; i++)
         paintSphere(x[i], y[i], color[i][0], color[i][1], color[i][2], 0.02);
       glPopAttrib();
@@ -594,8 +592,7 @@ int main(int argc, char **argv0) {
   glLoadIdentity();
   glShadeModel(GL_SMOOTH);
   glEnable(GL_LIGHT0);
-  glEnable(GL_NORMALIZE);
-  GLfloat lightPos[] = {0.0f, 0.0, -4., 2.0f};
+  GLfloat lightPos[] = {0, 0, -4, 2};
   glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
   glutMainLoop();
 }
