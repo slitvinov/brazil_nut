@@ -66,16 +66,13 @@ static double dmin(double x, double y) { return x < y ? x : y; }
 static double dmax(double x, double y) { return x > y ? x : y; }
 static void paintSphere(double x, double y, GLfloat r, GLfloat g, GLfloat b,
                         GLdouble radius) {
-  glPushAttrib(GL_ENABLE_BIT);
   glEnable(GL_LIGHTING);
-  GLfloat lightColor[] = {r * 1.2f, g * 1.2f, b * 1.2f, 1};
+  GLfloat lightColor[] = {r, g, b, 1};
   glLightfv(GL_LIGHT0, GL_DIFFUSE, lightColor);
-  glColor3f(r, g, b);
   glPushMatrix();
   glTranslated(x, y, 0);
   glutSolidSphere(radius, 20 * radius / 0.02, 20 * radius / 0.02);
   glPopMatrix();
-  glPopAttrib();
 };
 
 static double box_distance_to_plane(double x, double y, int p) {
@@ -173,10 +170,11 @@ static void table_set(int x, int y) {
   table[bit_id >> 5] |= (1 << (bit_id & 0x1f));
 }
 
-int _add_collision(int a, int b) {
+int add_collision(int a, int b) {
+  int minab;
   if (pow(x[a] - x[b], 2) + pow(y[a] - y[b], 2) <= threshold_collision_p2p)
     if (!table_get(a, b)) {
-      int minab = imin(a, b);
+      minab = imin(a, b);
       collisions[minab + n * (a + b - minab)][0] = 0;
       collisions[minab + n * (a + b - minab)][1] = 0;
       table_set(a, b);
@@ -296,13 +294,13 @@ static void loop() {
   }
   for (i = 0; i < n; i++)
     if (x[i] > 0) {
-      color[i][0] = 210. / 256;
-      color[i][1] = 170. / 256;
-      color[i][2] = 58. / 256;
+      color[i][0] = 63. / 64;
+      color[i][1] = 51. / 64;
+      color[i][2] = 87. / 320;
     } else {
-      color[i][0] = 121. / 256;
-      color[i][1] = 61. / 256;
-      color[i][2] = 0. / 256;
+      color[i][0] = 363. / 640;
+      color[i][1] = 183. / 640;
+      color[i][2] = 0;
     }
 
   time = 0;
@@ -390,12 +388,12 @@ static void loop() {
           if (code != 1 + 3)
             for (itA = 0; itA != sizeA; ++itA)
               for (itB = 0; itB != sizeB; ++itB, all++)
-                counter += (int)_add_collision(cellA[itA], cellB[itB]);
+                counter += add_collision(cellA[itA], cellB[itB]);
           else {
             m = sizeA / 2 + 1;
             for (i = 0; i < m; i++)
               for (j = i + 1; j < sizeA; j++, all++)
-                counter += (int)_add_collision(cellA[i], cellA[j]);
+                counter += add_collision(cellA[i], cellA[j]);
           }
         }
       }
@@ -556,7 +554,7 @@ static void loop() {
 
     if (step % steps_per_frame == 0) {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+      glDisable(GL_LIGHTING);
       glLineWidth(2.);
       glColor3f(1, 1, 1);
       glBegin(GL_LINE_LOOP);
@@ -584,8 +582,7 @@ static void loop() {
         pBits = (GLbyte *)malloc(lImageSize);
         if (pBits == NULL)
           exit(1);
-        glReadPixels(0, 0, xsize, ysize, GL_RGB, GL_UNSIGNED_BYTE,
-                     pBits);
+        glReadPixels(0, 0, xsize, ysize, GL_RGB, GL_UNSIGNED_BYTE, pBits);
         file = fopen(path, "wb");
         if (file == NULL) {
           free(pBits);
