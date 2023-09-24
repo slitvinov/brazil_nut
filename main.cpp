@@ -112,8 +112,8 @@ static void box_update(void) {
 static void collision_compute(double ux, double uy, double dt, double radius1,
                               double radius2, double r[2], double v1[2],
                               double v2[2], double omega1, double omega2,
-                              double force1[2], double force2[2],
-                              double *torque1, double *torque2) {
+                              double force1[2], double *torque1,
+                              double *torque2) {
   double kn = 1e5;
   double kt = 2. / 70 * kn;
   double gn = 5e1;
@@ -140,12 +140,8 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
       -kt * ux - gt * 0.5 * vt[0],
       -kt * uy - gt * 0.5 * vt[1],
   };
-  double f[2] = {force_factor * (Fn[0] + Ft[0]),
-                 force_factor * (Fn[1] + Ft[1])};
-  force1[0] += f[0];
-  force1[1] += f[1];
-  force2[0] -= f[0];
-  force2[1] -= f[1];
+  force1[0] = force_factor * (Fn[0] + Ft[0]);
+  force1[1] = force_factor * (Fn[1] + Ft[1]);
   *torque1 -= -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
   *torque2 += -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
 };
@@ -201,12 +197,10 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
                       vbox[1] - 2 * v1DOTn * box.planes[p][1]};
   double ghost_omega = -omega;
   double r[2] = {x1[0] - ghost[0], x1[1] - ghost[1]};
-  double f1[2] = {0, 0};
-  double f_dummy[2] = {0, 0};
+  double f1[2];
   double dummy_domegadt = 0;
   collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
-                    vghost, omega, ghost_omega, f1, f_dummy, domegadt,
-                    &dummy_domegadt);
+                    vghost, omega, ghost_omega, f1, domegadt, &dummy_domegadt);
   *fx += f1[0];
   *fy += f1[1];
 }
@@ -414,18 +408,15 @@ static void loop() {
 
       double v1[2] = {vx[a], vy[a]};
       double v2[2] = {vx[b], vy[b]};
-
-      double f1[2] = {0, 0};
-      double f2[2] = {0, 0};
-
+      double f1[2];
       collision_compute(it->second[0], it->second[0], dt, radius, radius, r, v1,
-                        v2, om[a], om[b], f1, f2, &to[a], &to[b]);
+                        v2, om[a], om[b], f1, &to[a], &to[b]);
 
       ax[a] += f1[0];
       ay[a] += f1[1];
 
-      ax[b] += f2[0];
-      ay[b] += f2[1];
+      ax[b] -= f1[0];
+      ay[b] -= f1[1];
     }
 
     double factor = pow(radius / nut.r, 2);
@@ -436,16 +427,13 @@ static void loop() {
       double r[2] = {x1[0] - nut.x, x1[1] - nut.y};
       double v1[2] = {vx[a], vy[a]};
       double v2[2] = {nut.u, nut.v};
-
-      double f1[2] = {0, 0};
-      double f2[2] = {0, 0};
-
+      double f1[2];
       collision_compute(it->second[0], it->second[0], dt, nut.r, radius, r, v1,
-                        v2, om[a], nut.omega, f1, f2, &to[a], &nut.domegadt);
+                        v2, om[a], nut.omega, f1, &to[a], &nut.domegadt);
       ax[a] += f1[0];
       ay[a] += f1[1];
-      nut.ax += factor * f2[0];
-      nut.ay += factor * f2[1];
+      nut.ax -= factor * f1[0];
+      nut.ay -= factor * f1[1];
     }
 
     nrem = 0;
