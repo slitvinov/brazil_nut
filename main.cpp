@@ -179,24 +179,21 @@ void _update_bcollision(int p, double radius, double x, double y, double u,
                         double v, double omega, double collision[2], double *fx,
                         double *fy, double *domegadt) {
   double d = dmin(-1e-5, box_distance_to_plane(x, y, p));
-  double x1[2] = {x, y};
   double v1[2] = {u, v};
-  double ghost[2] = {x1[0] + (-2 * d - 1e-2) * box.planes[p][0],
-                     x1[1] + (-2 * d - 1e-2) * box.planes[p][1]};
+  double ghost[2] = {x + (-2 * d - 1e-2) * box.planes[p][0],
+                     y + (-2 * d - 1e-2) * box.planes[p][1]};
   double v1DOTn = v1[0] * box.planes[p][0] + v1[1] * box.planes[p][1];
-  double vbox[2] = {0, 0};
-  vbox[0] = -box.angular_speed * ghost[1] -
-            box.tinfo.r1 * box.tinfo.a * sin(box.tinfo.a * box.t);
-  vbox[1] = +box.angular_speed * ghost[0] +
-            box.tinfo.r2 * box.tinfo.a * sin(box.tinfo.a * box.t);
-  double vghost[2] = {vbox[0] - 2 * v1DOTn * box.planes[p][0],
-                      vbox[1] - 2 * v1DOTn * box.planes[p][1]};
-  double ghost_omega = -omega;
-  double r[2] = {x1[0] - ghost[0], x1[1] - ghost[1]};
+  double vbx = -box.angular_speed * ghost[1] -
+               box.tinfo.r1 * box.tinfo.a * sin(box.tinfo.a * box.t);
+  double vby = +box.angular_speed * ghost[0] +
+               box.tinfo.r2 * box.tinfo.a * sin(box.tinfo.a * box.t);
+  double vghost[2] = {vbx - 2 * v1DOTn * box.planes[p][0],
+                      vby - 2 * v1DOTn * box.planes[p][1]};
+  double r[2] = {x - ghost[0], y - ghost[1]};
   double f1[2];
-  double dummy_domegadt = 0;
+  double dummy_domegadt;
   collision_compute(collision[0], collision[0], dt, radius, radius, r, v1,
-                    vghost, omega, ghost_omega, f1, domegadt, &dummy_domegadt);
+                    vghost, omega, -omega, f1, domegadt, &dummy_domegadt);
   *fx += f1[0];
   *fy += f1[1];
 }
