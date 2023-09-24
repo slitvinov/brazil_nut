@@ -117,7 +117,6 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
   double kn = 1e5;
   double kt = 2. / 70 * kn;
   double gn = 5e1;
-  double gt = 0;
   double IrI = sqrt(pow(r[0], 2) + pow(r[1], 2));
   double invIrI = 1. / sqrt(pow(r[0], 2) + pow(r[1], 2));
   double delta = dmax(0., radius1 + radius2 - IrI);
@@ -136,10 +135,7 @@ static void collision_compute(double ux, double uy, double dt, double radius1,
       kn * delta * n[0] - gn * 0.5 * vn[0],
       kn * delta * n[1] - gn * 0.5 * vn[1],
   };
-  double Ft[2] = {
-      -kt * ux - gt * 0.5 * vt[0],
-      -kt * uy - gt * 0.5 * vt[1],
-  };
+  double Ft[2] = {-kt * ux, -kt * uy};
   force1[0] = force_factor * (Fn[0] + Ft[0]);
   force1[1] = force_factor * (Fn[1] + Ft[1]);
   *torque1 -= -1. / 2 * (r[0] * Ft[1] - r[1] * Ft[0]);
